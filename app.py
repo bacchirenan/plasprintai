@@ -11,16 +11,10 @@ st.set_page_config(page_title="PlasPrint IA", layout="wide")
 st.title("PlasPrint IA")
 
 # === Carregar segredos (streamlit secrets) ===
-# Você vai definir esses valores no Streamlit Cloud (ou num .streamlit/secrets.toml local)
-# GEMINI_API_KEY: chave do Gemini
-# SHEET_ID: id do Google Sheet (o trecho entre /d/ e /edit na URL)
-# SERVICE_ACCOUNT_B64: conteúdo base64 do JSON do service account
-
 try:
     GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
     SHEET_ID = st.secrets["SHEET_ID"]
     SERVICE_ACCOUNT_B64 = st.secrets["SERVICE_ACCOUNT_B64"]
-
 except Exception as e:
     st.error("Por favor, configure os segredos: GEMINI_API_KEY, SHEET_ID, SERVICE_ACCOUNT_B64 (veja instruções).")
     st.stop()
@@ -59,19 +53,17 @@ st.sidebar.write("dacen:", len(dacen_df))
 st.sidebar.write("psi:", len(psi_df))
 
 # === Preparar Gemini client ===
-os.environ["GEMINI_API_KEY"] = GEMINI_API_KEY  # client pega da env
+os.environ["GEMINI_API_KEY"] = GEMINI_API_KEY
 client = genai.Client()
 
-# Função: construir contexto textual (cuidado com tamanho)
+# Função: construir contexto textual
 def build_context(dfs, max_chars=30000):
     parts = []
     for name, df in dfs.items():
         if df.empty:
             continue
         parts.append(f"--- {name} ---")
-        # transformar cada linha em texto
         for r in df.to_dict(orient="records"):
-            # filtrar chaves vazias
             row_items = [f"{k}: {v}" for k,v in r.items() if (v is not None and str(v).strip()!='')]
             parts.append(" | ".join(row_items))
     context = "\n".join(parts)
@@ -88,7 +80,6 @@ if st.button("Buscar"):
     else:
         dfs = {"erros": erros_df, "trabalhos": trabalhos_df, "dacen": dacen_df, "psi": psi_df}
 
-        # 1) Busca simples por palavras-chave para sugerir linhas e imagens
         q_tokens = [t for t in re.findall(r"\w+", pergunta.lower()) if len(t) > 2]
         matches = []
         for name, df in dfs.items():
@@ -97,16 +88,7 @@ if st.button("Buscar"):
                 text = " ".join([str(v).lower() for v in row.values if v is not None])
                 if any(tok in text for tok in q_tokens):
                     matches.append((name, row.to_dict()))
-        # if matches:
-        #    st.subheader("Linhas que podem ser relevantes (busca rápida)")
-        #    for name, row in matches:
-        #        st.markdown(f"**{name}** — {row}")
-        #        # mostrar imagem se tiver campo 'Imagem' ou 'imagem'
-        #        for key in row:
-        #            if key.lower().startswith("imagem") and row[key]:
-        #                st.image(row[key], width=300)
 
-        # 2) Montar contexto e perguntar ao Gemini
         st.subheader("Resposta")
         context = build_context(dfs)
         prompt = f"""
@@ -125,3 +107,22 @@ Responda objetivo, cite a aba e a linha se aplicável.
             st.markdown(resp.text)
         except Exception as e:
             st.error(f"Erro ao chamar Gemini: {e}")
+
+# === Marca de versão no canto inferior direito ===
+st.markdown(
+    """
+    <style>
+    .version-tag {
+        position: fixed;
+        bottom: 5px;
+        right: 10px;
+        font-size: 12px;
+        color: white;
+        opacity: 0.7;
+        z-index: 100;
+    }
+    </style>
+    <div class="version-tag">V1.0</div>
+    """,
+    unsafe_allow_html=True
+)
