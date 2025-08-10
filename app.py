@@ -80,7 +80,7 @@ def build_context(dfs, max_chars=30000):
     return context
 
 # UI: pergunta do usuário
-pergunta = st.text_input("Digite sua pergunta (ex: 'qual solução para erro 4' ou 'consumo de tinta para referência X'):")
+pergunta = st.text_input("Digite sua pergunta:")
 
 if st.button("Buscar"):
     if not pergunta.strip():
