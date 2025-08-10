@@ -114,7 +114,7 @@ st.markdown(
     <style>
     .version-tag {
         position: fixed;
-        bottom: 5px;
+        bottom: 20px;
         right: 10px;
         font-size: 12px;
         color: white;
@@ -126,3 +126,4 @@ st.markdown(
     """,
     unsafe_allow_html=True
 )
+
