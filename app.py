@@ -80,11 +80,11 @@ def build_context(dfs, max_chars=30000):
     return context
 
 # UI: pergunta do usuário
-pergunta = st.text_input("Qual é a sua dúvida?")
+pergunta = st.text_input("Qual a sua dúvida?")
 
 if st.button("Buscar"):
     if not pergunta.strip():
-        st.warning("Qual é a sua dúvida?")
+        st.warning("Digite uma pergunta.")
     else:
         dfs = {"erros": erros_df, "trabalhos": trabalhos_df, "dacen": dacen_df, "psi": psi_df}
 
@@ -97,14 +97,14 @@ if st.button("Buscar"):
                 text = " ".join([str(v).lower() for v in row.values if v is not None])
                 if any(tok in text for tok in q_tokens):
                     matches.append((name, row.to_dict()))
-        if matches:
-            st.subheader("Linhas que podem ser relevantes (busca rápida)")
-            for name, row in matches:
-                st.markdown(f"**{name}** — {row}")
-                # mostrar imagem se tiver campo 'Imagem' ou 'imagem'
-                for key in row:
-                    if key.lower().startswith("imagem") and row[key]:
-                        st.image(row[key], width=300)
+        # if matches:
+        #    st.subheader("Linhas que podem ser relevantes (busca rápida)")
+        #    for name, row in matches:
+        #        st.markdown(f"**{name}** — {row}")
+        #        # mostrar imagem se tiver campo 'Imagem' ou 'imagem'
+        #        for key in row:
+        #            if key.lower().startswith("imagem") and row[key]:
+        #                st.image(row[key], width=300)
 
         # 2) Montar contexto e perguntar ao Gemini
         st.subheader("Resposta")
