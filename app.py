@@ -8,7 +8,7 @@ from google import genai
 
 st.set_page_config(page_title="PlasPrint IA", layout="wide")
 
-st.title("Bem vindo a PlasPrint IA")
+st.title("PlasPrint IA")
 
 # === Carregar segredos (streamlit secrets) ===
 # Você vai definir esses valores no Streamlit Cloud (ou num .streamlit/secrets.toml local)
@@ -80,7 +80,7 @@ def build_context(dfs, max_chars=30000):
     return context
 
 # UI: pergunta do usuário
-pergunta = st.text_input("Digite sua pergunta:")
+pergunta = st.text_input("Qual é a sua dúvida?")
 
 if st.button("Buscar"):
     if not pergunta.strip():
