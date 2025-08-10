@@ -84,7 +84,7 @@ pergunta = st.text_input("Digite sua pergunta:")
 
 if st.button("Buscar"):
     if not pergunta.strip():
-        st.warning("Digite uma pergunta.")
+        st.warning("Qual é a sua dúvida?")
     else:
         dfs = {"erros": erros_df, "trabalhos": trabalhos_df, "dacen": dacen_df, "psi": psi_df}
 
