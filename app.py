@@ -6,7 +6,7 @@ import gspread
 from google.oauth2.service_account import Credentials
 from google import genai
 
-st.set_page_config(page_title="Assistente Técnico IA", layout="wide")
+st.set_page_config(page_title="PlasPrint IA", layout="wide")
 
 st.title("Bem vindo a PlasPrint IA")
 
@@ -107,7 +107,7 @@ if st.button("Buscar"):
                         st.image(row[key], width=300)
 
         # 2) Montar contexto e perguntar ao Gemini
-        st.subheader("Resposta gerada pelo Gemini")
+        st.subheader("Resposta")
         context = build_context(dfs)
         prompt = f"""
 Você é um assistente técnico que responde em português.
