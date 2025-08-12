@@ -1,53 +1,78 @@
+# app.py
 import streamlit as st
 import pandas as pd
-import re
-import base64
+import json, base64, os, re
 import gspread
 from google.oauth2.service_account import Credentials
 from google import genai
 
-st.set_page_config(page_title="PlasPrint IA", page_icon="🖨️", layout="wide")
+st.set_page_config(page_title="PlasPrint IA", layout="wide")
 
-st.title("🖨️ PlasPrint IA")
+st.title("PlasPrint IA")
 
-# === Carregar segredos ===
+# === Carregar segredos (streamlit secrets) ===
 try:
     GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
     SHEET_ID = st.secrets["SHEET_ID"]
     SERVICE_ACCOUNT_B64 = st.secrets["SERVICE_ACCOUNT_B64"]
-except Exception:
-    st.error("⚠️ Configure os segredos: GEMINI_API_KEY, SHEET_ID, SERVICE_ACCOUNT_B64.")
+except Exception as e:
+    st.error("Por favor, configure os segredos: GEMINI_API_KEY, SHEET_ID, SERVICE_ACCOUNT_B64 (veja instruções).")
     st.stop()
 
-# === Configurar Google Sheets ===
-service_account_info = base64.b64decode(SERVICE_ACCOUNT_B64).decode()
-creds = Credentials.from_service_account_info(eval(service_account_info))
+# === Decodificar service account e conectar ao Google Sheets ===
+sa_json = json.loads(base64.b64decode(SERVICE_ACCOUNT_B64).decode())
+scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+creds = Credentials.from_service_account_info(sa_json, scopes=scopes)
 gc = gspread.authorize(creds)
 
-# Carregar as abas
-def carregar_aba(nome):
+# Abrir planilha
+try:
+    sh = gc.open_by_key(SHEET_ID)
+except Exception as e:
+    st.error(f"Não consegui abrir a planilha. Verifique o SHEET_ID e se a planilha foi compartilhada com o service account.\nErro: {e}")
+    st.stop()
+
+# Ler abas (se não existir, retorna DF vazio)
+def read_ws(name):
     try:
-        ws = gc.open_by_key(SHEET_ID).worksheet(nome)
-        df = pd.DataFrame(ws.get_all_records())
-        return df
-    except:
+        ws = sh.worksheet(name)
+        return pd.DataFrame(ws.get_all_records())
+    except Exception:
         return pd.DataFrame()
 
-abas = ["erros", "trabalhos", "dacen", "psi"]
-erros_df, trabalhos_df, dacen_df, psi_df = [carregar_aba(a) for a in abas]
+erros_df = read_ws("erros")
+trabalhos_df = read_ws("trabalhos")
+dacen_df = read_ws("dacen")
+psi_df = read_ws("psi")
 
-# === Configurar Gemini ===
-client = genai.Client(api_key=GEMINI_API_KEY)
+# Mostrar contagens simples
+st.sidebar.header("Dados carregados")
+st.sidebar.write("erros:", len(erros_df))
+st.sidebar.write("trabalhos:", len(trabalhos_df))
+st.sidebar.write("dacen:", len(dacen_df))
+st.sidebar.write("psi:", len(psi_df))
 
-def build_context(dfs):
-    ctx = []
+# === Preparar Gemini client ===
+os.environ["GEMINI_API_KEY"] = GEMINI_API_KEY
+client = genai.Client()
+
+# Função: construir contexto textual
+def build_context(dfs, max_chars=30000):
+    parts = []
     for name, df in dfs.items():
-        if not df.empty:
-            ctx.append(f"Aba: {name}\n{df.to_string(index=False)}")
-    return "\n\n".join(ctx)
+        if df.empty:
+            continue
+        parts.append(f"--- {name} ---")
+        for r in df.to_dict(orient="records"):
+            row_items = [f"{k}: {v}" for k,v in r.items() if (v is not None and str(v).strip()!='')]
+            parts.append(" | ".join(row_items))
+    context = "\n".join(parts)
+    if len(context) > max_chars:
+        context = context[:max_chars] + "\n...[CONTEXTO TRUNCADO]"
+    return context
 
-# Entrada do usuário
-pergunta = st.text_input("Digite sua pergunta:")
+# UI: pergunta do usuário
+pergunta = st.text_input("Qual a sua dúvida?")
 
 if st.button("Buscar"):
     if not pergunta.strip():
@@ -55,34 +80,55 @@ if st.button("Buscar"):
     else:
         dfs = {"erros": erros_df, "trabalhos": trabalhos_df, "dacen": dacen_df, "psi": psi_df}
 
-        # Montar contexto e prompt
+        q_tokens = [t for t in re.findall(r"\w+", pergunta.lower()) if len(t) > 2]
+        matches = []
+        for name, df in dfs.items():
+            if df.empty: continue
+            for i, row in df.iterrows():
+                text = " ".join([str(v).lower() for v in row.values if v is not None])
+                if any(tok in text for tok in q_tokens):
+                    matches.append((name, row.to_dict()))
+
+        st.subheader("Resposta")
         context = build_context(dfs)
         prompt = f"""
 Você é um assistente técnico que responde em português.
-Baseie-se **apenas** nos dados abaixo (planilhas). Dê uma resposta objetiva e cite a aba e a linha, se aplicável.
-Se houver links de imagens, mantenha-os no texto.
+Baseie-se **apenas** nos dados abaixo (planilhas). Dê uma resposta objetiva e diga, se houver, links de imagens relacionados.
 Dados:
 {context}
 
 Pergunta:
 {pergunta}
-"""
 
+Responda objetivo, cite a aba e a linha se aplicável.
+"""
         try:
             resp = client.models.generate_content(model="gemini-2.5-flash", contents=prompt)
-            resposta = resp.text
-
-            # Mostrar texto
-            st.markdown(resposta)
-
-            # Procurar links do Google Drive e mostrar imagens
-            drive_links = re.findall(r"https?://drive\.google\.com/[^\s)]+", resposta)
-            for link in drive_links:
-                match = re.search(r"/d/([a-zA-Z0-9_-]+)", link)
-                if match:
-                    file_id = match.group(1)
-                    img_url = f"https://drive.google.com/uc?export=view&id={file_id}"
-                    st.image(img_url, use_column_width=True)
-
+            st.markdown(resp.text)
         except Exception as e:
             st.error(f"Erro ao chamar Gemini: {e}")
+
+# === Marca de versão no canto inferior direito ===
+st.markdown(
+    """
+    <style>
+    .version-tag {
+        position: fixed;
+        bottom: 40px;
+        right: 25px;
+        font-size: 12px;
+        color: white;
+        opacity: 0.7;
+        z-index: 100;
+    }
+    </style>
+    <div class="version-tag">V1.0</div>
+    """,
+    unsafe_allow_html=True
+)
+
+
+
+
+
+
