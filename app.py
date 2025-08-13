@@ -1,56 +1,88 @@
 import streamlit as st
 import pandas as pd
-import json, base64, os, re, requests
+import json, base64, os, re, requests, io
 import gspread
 from google.oauth2.service_account import Credentials
 from google import genai
-import io
+
+# ===== Configuração da página =====
+st.set_page_config(page_title="PlasPrint IA", page_icon="favicon.ico", layout="wide")
 
 # ===== Funções auxiliares =====
-
-# Cotação do dólar
+@st.cache_data(ttl=300)  # Cache por 5 minutos
 def get_usd_brl_rate():
     try:
         res = requests.get("https://economia.awesomeapi.com.br/json/last/USD-BRL")
         data = res.json()
         return float(data["USDBRL"]["ask"])
-    except Exception as e:
-        st.error(f"Erro ao obter cotação do dólar: {e}")
+    except:
         return None
 
-# Formatar valores em dólar
 def format_dollar_values(text, rate):
-    def repl(match):
-        dollar_str = match.group(0)
-        try:
-            val = float(dollar_str.replace("$", "").replace(",", "").strip())
-            converted = val * rate
-            return f"{dollar_str} (R$ {converted:,.2f})"
-        except:
-            return dollar_str
-
-    if "$" in text:
-        formatted = re.sub(r"\$\d+(?:\.\d+)?", repl, text)
-        if not formatted.endswith("\n"):
-            formatted += "\n"
-        formatted += "(valores sem impostos)"
-        return formatted
-    else:
+    if "$" not in text or rate is None:
         return text
 
-# ===== Configuração da página =====
-st.set_page_config(page_title="PlasPrint IA", page_icon="favicon.ico", layout="wide")
+    money_regex = re.compile(r'\$\d{1,3}(?:[.,]\d{3})*(?:[.,]\d+)?')
+
+    def parse_money_str(s):
+        s = s.strip()
+        if s.startswith('$'):
+            s = s[1:]
+        s = s.replace(" ", "")
+        if '.' in s and ',' in s:
+            if s.rfind(',') > s.rfind('.'):
+                dec, thou = ',', '.'
+            else:
+                dec, thou = '.', ','
+            s_clean = s.replace(thou, '').replace(dec, '.')
+        elif ',' in s:
+            last = s.rsplit(',', 1)[-1]
+            if 1 <= len(last) <= 2:
+                s_clean = s.replace('.', '').replace(',', '.')
+            else:
+                s_clean = s.replace(',', '')
+        elif '.' in s:
+            last = s.rsplit('.', 1)[-1]
+            if 1 <= len(last) <= 2:
+                s_clean = s
+            else:
+                s_clean = s.replace('.', '')
+        else:
+            s_clean = s
+        try:
+            return float(s_clean)
+        except:
+            return None
+
+    def to_brazilian(n):
+        s = f"{n:,.2f}"
+        s = s.replace(',', 'X').replace('.', ',').replace('X', '.')
+        return s
+
+    def repl(m):
+        orig = m.group(0)
+        val = parse_money_str(orig)
+        if val is None:
+            return orig
+        converted = val * rate
+        brl = to_brazilian(converted)
+        return f"{orig} (R$ {brl})"
+
+    formatted = money_regex.sub(repl, text)
+
+    if not formatted.endswith("\n"):
+        formatted += "\n"
+    formatted += "(valores sem impostos)"
+    return formatted
 
 def inject_favicon():
     favicon_path = "favicon.ico"
     try:
         with open(favicon_path, "rb") as f:
             data = base64.b64encode(f.read()).decode()
-        favicon_html = f"""<link rel="icon" href="data:image/x-icon;base64,{data}" type="image/x-icon" />"""
-        st.markdown(favicon_html, unsafe_allow_html=True)
-    except Exception as e:
-        st.warning(f"Não foi possível carregar o favicon: {e}")
-
+        st.markdown(f'<link rel="icon" href="data:image/x-icon;base64,{data}" type="image/x-icon" />', unsafe_allow_html=True)
+    except:
+        pass
 inject_favicon()
 
 def get_base64_of_jpg(image_path):
@@ -61,72 +93,69 @@ def get_base64_font(path):
     with open(path, "rb") as f:
         return base64.b64encode(f.read()).decode()
 
+# ===== Carregar background e fonte =====
 background_image = "background.jpg"
 img_base64 = get_base64_of_jpg(background_image)
 font_base64 = get_base64_font("font.ttf")
 
-st.markdown(
-    f"""
-    <style>
-    @font-face {{
-        font-family: 'CustomFont';
-        src: url(data:font/ttf;base64,{font_base64}) format('truetype');
-        font-weight: normal;
-        font-style: normal;
-    }}
-    h1.custom-font {{
-        font-family: 'CustomFont', sans-serif !important;
-        text-align: center;
-        font-size: 380%;
-    }}
-    p.custom-font {{
-        font-family: 'CustomFont', sans-serif !important;
-        font-weight: bold;
-        text-align: left;
-    }}
-    div.stButton > button {{
-        font-family: 'CustomFont', sans-serif !important;
-    }}
-    div.stTextInput > div > input {{
-        font-family: 'CustomFont', sans-serif !important;
-    }}
-    .stApp {{
-        background-image: url("data:image/jpg;base64,{img_base64}");
-        background-size: cover;
-        background-position: center;
-        background-repeat: no-repeat;
-        background-attachment: fixed;
-    }}
-    </style>
-    """,
-    unsafe_allow_html=True
-)
+st.markdown(f"""
+<style>
+@font-face {{
+    font-family: 'CustomFont';
+    src: url(data:font/ttf;base64,{font_base64}) format('truetype');
+}}
+h1.custom-font {{
+    font-family: 'CustomFont', sans-serif !important;
+    text-align: center;
+    font-size: 380%;
+}}
+p.custom-font {{
+    font-family: 'CustomFont', sans-serif !important;
+    font-weight: bold;
+    text-align: left;
+}}
+div.stButton > button {{
+    font-family: 'CustomFont', sans-serif !important;
+}}
+div.stTextInput > div > input {{
+    font-family: 'CustomFont', sans-serif !important;
+}}
+.stApp {{
+    background-image: url("data:image/jpg;base64,{img_base64}");
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    background-attachment: fixed;
+}}
+</style>
+""", unsafe_allow_html=True)
 
 # ===== Carregar segredos =====
 try:
     GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
     SHEET_ID = st.secrets["SHEET_ID"]
     SERVICE_ACCOUNT_B64 = st.secrets["SERVICE_ACCOUNT_B64"]
-except Exception as e:
-    st.error("Por favor, configure os segredos: GEMINI_API_KEY, SHEET_ID, SERVICE_ACCOUNT_B64.")
+except:
+    st.error("Configure os segredos GEMINI_API_KEY, SHEET_ID e SERVICE_ACCOUNT_B64.")
     st.stop()
 
 sa_json = json.loads(base64.b64decode(SERVICE_ACCOUNT_B64).decode())
 scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
 creds = Credentials.from_service_account_info(sa_json, scopes=scopes)
 gc = gspread.authorize(creds)
-
 try:
     sh = gc.open_by_key(SHEET_ID)
 except Exception as e:
-    st.error(f"Não consegui abrir a planilha. Erro: {e}")
+    st.error(f"Não consegui abrir a planilha: {e}")
     st.stop()
 
+# ===== Carregar DataFrames com cache =====
+@st.cache_data
 def read_ws(name):
     try:
         ws = sh.worksheet(name)
         return pd.DataFrame(ws.get_all_records())
-    except Exception:
+    except:
         return pd.DataFrame()
 
 erros_df = read_ws("erros")
@@ -144,47 +173,47 @@ st.sidebar.write("psi:", len(psi_df))
 os.environ["GEMINI_API_KEY"] = GEMINI_API_KEY
 client = genai.Client()
 
-def build_context(dfs, max_chars=30000):
+def build_context(dfs, max_chars=15000):
     parts = []
     for name, df in dfs.items():
         if df.empty:
             continue
         parts.append(f"--- {name} ---")
-        for r in df.to_dict(orient="records"):
-            row_items = [f"{k}: {v}" for k, v in r.items() if (v is not None and str(v).strip() != '')]
+        for r in df.head(50).to_dict(orient="records"):  # só 50 linhas por aba
+            row_items = [f"{k}: {v}" for k,v in r.items() if v is not None and str(v).strip() != '']
             parts.append(" | ".join(row_items))
     context = "\n".join(parts)
     if len(context) > max_chars:
         context = context[:max_chars] + "\n...[CONTEXTO TRUNCADO]"
     return context
 
+# ===== Cache de imagens do Drive =====
+@st.cache_data
+def load_drive_image(file_id):
+    url = f"https://drive.google.com/uc?export=view&id={file_id}"
+    res = requests.get(url)
+    res.raise_for_status()
+    return res.content
+
 def show_drive_images_from_text(text):
-    # Extrai IDs válidos de arquivos do Google Drive
     drive_links = re.findall(r'https?://drive\.google\.com/file/d/([a-zA-Z0-9_-]+)[^/]*/view', text)
-    if drive_links:
-        for file_id in drive_links:
-            file_id = file_id.rstrip("_")  # Remove underscore final se houver
-            direct_url = f"https://drive.google.com/uc?export=view&id={file_id}"
-            try:
-                response = requests.get(direct_url)
-                response.raise_for_status()
-                img_bytes = io.BytesIO(response.content)
-                st.image(img_bytes, use_container_width=True)
-            except Exception as e:
-                st.warning(f"Não foi possível carregar a imagem do Drive: {direct_url}\nErro: {e}")
+    for file_id in drive_links:
+        try:
+            img_bytes = io.BytesIO(load_drive_image(file_id))
+            st.image(img_bytes, use_container_width=True)
+        except:
+            st.warning(f"Não foi possível carregar a imagem do Drive: {file_id}")
 
 def remove_drive_links(text):
-    # Remove links do Google Drive do texto
     return re.sub(r'https?://drive\.google\.com/file/d/[a-zA-Z0-9_-]+/view\?usp=drive_link', '', text)
 
 # ===== Layout principal =====
-col_esq, col_meio, col_dir = st.columns([1, 2, 1])
+col_esq, col_meio, col_dir = st.columns([1,2,1])
 with col_meio:
     st.markdown("<h1 class='custom-font'>PlasPrint IA</h1><br>", unsafe_allow_html=True)
     st.markdown("<p class='custom-font'>Qual a sua dúvida?</p>", unsafe_allow_html=True)
     pergunta = st.text_input("", key="central_input", label_visibility="collapsed")
 
-    # ===== Estado do botão =====
     if "botao_texto" not in st.session_state:
         st.session_state.botao_texto = "Buscar"
 
@@ -200,12 +229,7 @@ with col_meio:
                 if rate is None:
                     st.error("Não foi possível obter a cotação do dólar.")
                 else:
-                    dfs = {
-                        "erros": erros_df,
-                        "trabalhos": trabalhos_df,
-                        "dacen": dacen_df,
-                        "psi": psi_df
-                    }
+                    dfs = {"erros": erros_df, "trabalhos": trabalhos_df, "dacen": dacen_df, "psi": psi_df}
                     context = build_context(dfs)
                     prompt = f"""
 Você é um assistente técnico que responde em português.
@@ -224,61 +248,24 @@ Responda de forma clara, sem citar a aba ou linha da planilha.
                     try:
                         resp = client.models.generate_content(model="gemini-2.5-flash", contents=prompt)
                         output_fmt = format_dollar_values(resp.text, rate)
-                        output_fmt = remove_drive_links(output_fmt)  # Remove links do texto
-
-                        # Mostra o texto formatado sem links
-                        st.markdown(
-                            f"<div style='text-align:center; margin-top:20px;'>{output_fmt.replace(chr(10),'<br/>')}</div>",
-                            unsafe_allow_html=True
-                        )
-
-                        # Mostra apenas as imagens do Google Drive
+                        output_fmt = remove_drive_links(output_fmt)
+                        st.markdown(f"<div style='text-align:center; margin-top:20px;'>{output_fmt.replace(chr(10),'<br/>')}</div>", unsafe_allow_html=True)
                         show_drive_images_from_text(resp.text)
-
                     except Exception as e:
                         st.error(f"Erro ao chamar Gemini: {e}")
             st.session_state.botao_texto = "Buscar"
 
-# ===== Versão no rodapé =====
-st.markdown(
-    """
-    <style>
-    .version-tag {
-        position: fixed;
-        bottom: 50px;
-        right: 25px;
-        font-size: 12px;
-        color: white;
-        opacity: 0.7;
-        z-index: 100;
-    }
-    </style>
-    <div class="version-tag">V1.0</div>
-    """,
-    unsafe_allow_html=True
-)
+# ===== Rodapé e logo =====
+st.markdown("""
+<style>
+.version-tag { position: fixed; bottom: 50px; right: 25px; font-size: 12px; color: white; opacity: 0.7; z-index: 100; }
+.logo-footer { position: fixed; bottom: 5px; left: 50%; transform: translateX(-50%); width: 120px; z-index: 100; }
+</style>
+<div class="version-tag">V1.0</div>
+""", unsafe_allow_html=True)
 
-# ===== Logo no rodapé =====
 def get_base64_img(path):
     with open(path, "rb") as f:
-        data = f.read()
-    return base64.b64encode(data).decode()
-
+        return base64.b64encode(f.read()).decode()
 img_base64_logo = get_base64_img("logo.png")
-
-st.markdown(
-    f"""
-    <style>
-    .logo-footer {{
-        position: fixed;
-        bottom: 5px;
-        left: 50%;
-        transform: translateX(-50%);
-        width: 120px;
-        z-index: 100;
-    }}
-    </style>
-    <img src="data:image/png;base64,{img_base64_logo}" class="logo-footer" />
-    """,
-    unsafe_allow_html=True
-)
+st.markdown(f'<img src="data:image/png;base64,{img_base64_logo}" class="logo-footer" />', unsafe_allow_html=True)
