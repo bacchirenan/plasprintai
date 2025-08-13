@@ -1,317 +1,97 @@
 import streamlit as st
 import pandas as pd
-import json, base64, os, re, requests, io
+import json, base64, os, re, io, requests
 import gspread
 from google.oauth2.service_account import Credentials
 from google import genai
 
-# ===== Funções auxiliares =====
+st.set_page_config(page_title="PlasPrint IA", layout="wide")
 
-# Cotação do dólar
-def get_usd_brl_rate():
-    try:
-        res = requests.get("https://economia.awesomeapi.com.br/json/last/USD-BRL")
-        data = res.json()
-        return float(data["USDBRL"]["ask"])
-    except Exception as e:
-        st.error(f"Erro ao obter cotação do dólar: {e}")
-        return None
-
-# Formatar valores em dólar
-def format_dollar_values(text, rate):
-    def repl(match):
-        dollar_str = match.group(0)
-        try:
-            val = float(dollar_str.replace("$", "").replace(",", "").strip())
-            converted = val * rate
-            return f"{dollar_str} (R$ {converted:,.2f})"
-        except:
-            return dollar_str
-
-    if "$" in text:
-        formatted = re.sub(r"\$\d+(?:\.\d+)?", repl, text)
-        if not formatted.endswith("\n"):
-            formatted += "\n"
-        formatted += "(valores sem impostos)"
-        return formatted
-    else:
-        return text
-
-# Converte URLs em links clicáveis mesmo dentro de HTML customizado
-def linkify_urls(text: str) -> str:
-    # Evita pegar caracteres de pontuação no final
-    return re.sub(r'(https?://[^\s<>\)]+)', r'<a href="\1" target="_blank">\1</a>', text)
-
-# ===== Configuração da página =====
-st.set_page_config(page_title="PlasPrint IA", page_icon="favicon.ico", layout="wide")
-
-def inject_favicon():
-    favicon_path = "favicon.ico"
-    try:
-        with open(favicon_path, "rb") as f:
-            data = base64.b64encode(f.read()).decode()
-        favicon_html = f"""<link rel="icon" href="data:image/x-icon;base64,{data}" type="image/x-icon" />"""
-        st.markdown(favicon_html, unsafe_allow_html=True)
-    except Exception as e:
-        st.warning(f"Não foi possível carregar o favicon: {e}")
-
-inject_favicon()
-
-def get_base64_of_jpg(image_path):
-    with open(image_path, "rb") as img_file:
-        return base64.b64encode(img_file.read()).decode()
-
-def get_base64_font(path):
-    with open(path, "rb") as f:
-        return base64.b64encode(f.read()).decode()
-
-background_image = "background.jpg"
-img_base64 = get_base64_of_jpg(background_image)
-font_base64 = get_base64_font("font.ttf")
-
-st.markdown(
-    f"""
-    <style>
-    @font-face {{
-        font-family: 'CustomFont';
-        src: url(data:font/ttf;base64,{font_base64}) format('truetype');
-        font-weight: normal;
-        font-style: normal;
-    }}
-    h1.custom-font {{
-        font-family: 'CustomFont', sans-serif !important;
-        text-align: center;
-        font-size: 380%;
-    }}
-    p.custom-font {{
-        font-family: 'CustomFont', sans-serif !important;
-        font-weight: bold;
-        text-align: left;
-    }}
-    div.stButton > button {{
-        font-family: 'CustomFont', sans-serif !important;
-    }}
-    div.stTextInput > div > input {{
-        font-family: 'CustomFont', sans-serif !important;
-    }}
-    .stApp {{
-        background-image: url("data:image/jpg;base64,{img_base64}");
-        background-size: cover;
-        background-position: center;
-        background-repeat: no-repeat;
-        background-attachment: fixed;
-    }}
-    </style>
-    """,
-    unsafe_allow_html=True
-)
-
-# ===== Carregar segredos =====
+# === Carregar segredos (streamlit secrets) ===
 try:
     GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
     SHEET_ID = st.secrets["SHEET_ID"]
-    SERVICE_ACCOUNT_B64 = st.secrets["SERVICE_ACCOUNT_B64"]
+    GOOGLE_SHEETS_CREDENTIALS = json.loads(st.secrets["GOOGLE_SHEETS_CREDENTIALS"])
 except Exception as e:
-    st.error("Por favor, configure os segredos: GEMINI_API_KEY, SHEET_ID, SERVICE_ACCOUNT_B64.")
+    st.error("Erro ao carregar segredos. Verifique o arquivo .streamlit/secrets.toml.")
     st.stop()
 
-sa_json = json.loads(base64.b64decode(SERVICE_ACCOUNT_B64).decode())
-scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
-creds = Credentials.from_service_account_info(sa_json, scopes=scopes)
-gc = gspread.authorize(creds)
-
+# === Conectar ao Google Sheets ===
 try:
-    sh = gc.open_by_key(SHEET_ID)
+    scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+    creds = Credentials.from_service_account_info(GOOGLE_SHEETS_CREDENTIALS, scopes=scope)
+    client = gspread.authorize(creds)
+    sheet = client.open_by_key(SHEET_ID).sheet1
 except Exception as e:
-    st.error(f"Não consegui abrir a planilha. Erro: {e}")
+    st.error(f"Erro ao conectar ao Google Sheets: {e}")
     st.stop()
 
-def read_ws(name):
-    try:
-        ws = sh.worksheet(name)
-        return pd.DataFrame(ws.get_all_records())
-    except Exception:
-        return pd.DataFrame()
+# === Função para exibir imagens do Google Drive ===
+def show_drive_images_from_text(text):
+    """
+    Procura links do Google Drive no texto e exibe as imagens no Streamlit.
+    Funciona tanto para links com 'id=' quanto para links já no formato export/view.
+    """
+    drive_links = re.findall(
+        r'(https?://drive\.google\.com[^\s]+)',
+        text,
+        re.IGNORECASE
+    )
 
-erros_df = read_ws("erros")
-trabalhos_df = read_ws("trabalhos")
-dacen_df = read_ws("dacen")
-psi_df = read_ws("psi")
-
-st.sidebar.header("Dados carregados")
-st.sidebar.write("erros:", len(erros_df))
-st.sidebar.write("trabalhos:", len(trabalhos_df))
-st.sidebar.write("dacen:", len(dacen_df))
-st.sidebar.write("psi:", len(psi_df))
-
-# ===== Cliente Gemini =====
-os.environ["GEMINI_API_KEY"] = GEMINI_API_KEY
-client = genai.Client()
-
-def build_context(dfs, max_chars=30000):
-    parts = []
-    for name, df in dfs.items():
-        if df.empty:
-            continue
-        parts.append(f"--- {name} ---")
-        for r in df.to_dict(orient="records"):
-            row_items = [f"{k}: {v}" for k, v in r.items() if (v is not None and str(v).strip() != '')]
-            parts.append(" | ".join(row_items))
-    context = "\n".join(parts)
-    if len(context) > max_chars:
-        context = context[:max_chars] + "\n...[CONTEXTO TRUNCADO]"
-    return context
-
-# ===== Imagens do Google Drive =====
-def _extract_drive_ids(text: str):
-    ids = set()
-
-    # .../file/d/ID/...
-    for m in re.finditer(r'drive\.google\.com/(?:file/d|thumbnail)/([a-zA-Z0-9_-]+)', text, re.IGNORECASE):
-        ids.add(m.group(1))
-
-    # ...?id=ID  (open?id=, uc?id=, uc?export=view&id=, etc.)
-    for m in re.finditer(r'drive\.google\.com/[^\s<>]*[?&]id=([a-zA-Z0-9_-]+)', text, re.IGNORECASE):
-        ids.add(m.group(1))
-
-    return list(ids)
-
-def show_drive_images_from_text(text: str):
-    file_ids = _extract_drive_ids(text)
-
-    # Caso o Gemini já retorne o link uc?export=view&id=..., capturamos direto também
-    direct_uc_links = re.findall(r'(https?://drive\.google\.com/uc[^\s<>"]+)', text, re.IGNORECASE)
-
-    if not file_ids and not direct_uc_links:
-        return
-
-    st.markdown("### Imagens do Google Drive:")
-
-    # Exibe pelos IDs (gera link direto)
-    for fid in file_ids:
-        direct_url = f"https://drive.google.com/uc?export=view&id={fid}"
-        try:
-            # Exibe diretamente via URL (Streamlit busca a imagem)
-            st.image(direct_url, use_container_width=True)
-        except Exception:
-            # Fallback: link clicável
-            st.markdown(f"[Abrir imagem no Drive]({direct_url})")
-
-    # Exibe links uc diretos encontrados no texto (evita duplicar se o mesmo id já foi exibido)
-    shown = set(file_ids)
-    for link in direct_uc_links:
-        # Tenta extrair id pra checar duplicidade
-        mid = re.search(r'[?&]id=([a-zA-Z0-9_-]+)', link)
-        if mid and mid.group(1) in shown:
-            continue
-        try:
-            st.image(link, use_container_width=True)
-        except Exception:
-            st.markdown(f"[Abrir imagem no Drive]({link})")
-
-# ===== Layout principal =====
-col_esq, col_meio, col_dir = st.columns([1, 2, 1])
-with col_meio:
-    st.markdown("<h1 class='custom-font'>PlasPrint IA</h1><br>", unsafe_allow_html=True)
-    st.markdown("<p class='custom-font'>Qual a sua dúvida?</p>", unsafe_allow_html=True)
-    pergunta = st.text_input("", key="central_input", label_visibility="collapsed")
-
-    if "botao_texto" not in st.session_state:
-        st.session_state.botao_texto = "Buscar"
-
-    buscar = st.button(st.session_state.botao_texto, use_container_width=True)
-
-    if buscar:
-        if not pergunta.strip():
-            st.warning("Digite uma pergunta.")
-        else:
-            st.session_state.botao_texto = "Aguarde"
-            with st.spinner("Processando resposta..."):
-                rate = get_usd_brl_rate()
-                if rate is None:
-                    st.error("Não foi possível obter a cotação do dólar.")
+    if drive_links:
+        st.markdown("### Imagens do Google Drive:")
+        for link in drive_links:
+            try:
+                if "export=view" in link:
+                    img_url = link
                 else:
-                    dfs = {
-                        "erros": erros_df,
-                        "trabalhos": trabalhos_df,
-                        "dacen": dacen_df,
-                        "psi": psi_df
-                    }
-                    context = build_context(dfs)
-                    prompt = f"""
-Você é um assistente técnico que responde em português.
-Baseie-se **apenas** nos dados abaixo (planilhas). 
-Responda de forma objetiva, sem citar de onde veio a informação ou a fonte.
-Se houver links de imagens, inclua-os no final.
+                    match = re.search(r"id=([a-zA-Z0-9_-]+)", link)
+                    if match:
+                        file_id = match.group(1)
+                        img_url = f"https://drive.google.com/uc?export=view&id={file_id}"
+                    else:
+                        continue
+                st.image(img_url, use_container_width=True)
+            except Exception as e:
+                st.warning(f"Não foi possível carregar a imagem: {link}\nErro: {e}")
 
-Dados:
-{context}
+# === Configurar cliente do Gemini ===
+try:
+    genai.configure(api_key=GEMINI_API_KEY)
+except Exception as e:
+    st.error(f"Erro ao configurar Gemini API: {e}")
+    st.stop()
 
-Pergunta:
-{pergunta}
+model = genai.GenerativeModel("gemini-1.5-pro")
 
-Responda de forma clara, sem citar a aba ou linha da planilha.
-"""
-                    try:
-                        resp = client.models.generate_content(model="gemini-2.5-flash", contents=prompt)
-                        # 1) Converte $ para BRL
-                        output_fmt = format_dollar_values(resp.text, rate)
-                        # 2) Linkifica URLs para ficarem clicáveis no HTML customizado
-                        output_fmt = linkify_urls(output_fmt)
+# === Interface ===
+st.markdown("<h1 style='text-align: center; font-size: 40px;'>PlasPrint IA</h1>", unsafe_allow_html=True)
+st.write("\n")
+st.markdown("<h3 style='text-align: left;'>Qual a sua dúvida?</h3>", unsafe_allow_html=True)
 
-                        # Mostra o texto formatado e centralizado
-                        st.markdown(
-                            f"<div style='text-align:center; margin-top:20px;'>{output_fmt.replace(chr(10),'<br/>')}</div>",
-                            unsafe_allow_html=True
-                        )
+user_input = st.text_area("", height=100)
 
-                        # Mostra imagens do Google Drive
-                        show_drive_images_from_text(resp.text)
+if st.button("Enviar"):
+    if user_input.strip():
+        try:
+            resp = model.generate_content(user_input)
+            if hasattr(resp, "text"):
+                st.markdown(f"<div style='text-align: center;'>{resp.text}</div>", unsafe_allow_html=True)
+                # Exibir imagens do Google Drive encontradas na resposta
+                show_drive_images_from_text(resp.text)
+            else:
+                st.warning("A resposta não contém texto.")
+        except Exception as e:
+            st.error(f"Erro ao gerar resposta: {e}")
+    else:
+        st.warning("Por favor, digite uma pergunta.")
 
-                    except Exception as e:
-                        st.error(f"Erro ao chamar Gemini: {e}")
-            st.session_state.botao_texto = "Buscar"
-
-# ===== Versão no rodapé =====
+# === Rodapé ===
 st.markdown(
     """
-    <style>
-    .version-tag {
-        position: fixed;
-        bottom: 50px;
-        right: 25px;
-        font-size: 12px;
-        color: white;
-        opacity: 0.7;
-        z-index: 100;
-    }
-    </style>
-    <div class="version-tag">V1.0</div>
-    """,
-    unsafe_allow_html=True
-)
-
-# ===== Logo no rodapé =====
-def get_base64_img(path):
-    with open(path, "rb") as f:
-        data = f.read()
-    return base64.b64encode(data).decode()
-
-img_base64_logo = get_base64_img("logo.png")
-
-st.markdown(
-    f"""
-    <style>
-    .logo-footer {{
-        position: fixed;
-        bottom: 5px;
-        left: 50%;
-        transform: translateX(-50%);
-        width: 120px;
-        z-index: 100;
-    }}
-    </style>
-    <img src="data:image/png;base64,{img_base64_logo}" class="logo-footer" />
+    <div style='text-align: right; color: white; font-size: 10px;'>
+        V1.0
+    </div>
     """,
     unsafe_allow_html=True
 )
