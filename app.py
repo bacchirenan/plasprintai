@@ -72,7 +72,7 @@ st.markdown(
     h1.custom-font {{
         font-family: 'CustomFont', sans-serif !important;
         text-align: center;
-        font-size: 170%; /* aumento de 70% no tamanho do título */
+        font-size: 400%; /* aumento de 70% no tamanho do título */
     }}
     p.custom-font {{
         font-family: 'CustomFont', sans-serif !important;
