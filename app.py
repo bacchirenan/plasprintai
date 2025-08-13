@@ -202,16 +202,27 @@ Pergunta:
 
 Responda de forma clara, sem citar a aba ou linha da planilha.
 """
-                    try:
-                        resp = client.models.generate_content(model="gemini-2.5-flash", contents=prompt)
-                        output_fmt = format_dollar_values(resp.text, rate)
-                        st.markdown(
-                            f"<div style='text-align:center; margin-top:20px;'>{output_fmt.replace('\n','<br/>')}</div>",
-                            unsafe_allow_html=True
-                        )
-                    except Exception as e:
-                        st.error(f"Erro ao chamar Gemini: {e}")
-            st.session_state.botao_texto = "Buscar"
+                    output_text = resp.text
+
+# Converte valores em dólar se houver
+formatted_text = format_dollar_values(output_text, rate)
+
+# Procura links de imagem
+image_links = re.findall(r'(https?://\S+\.(?:png|jpg|jpeg|gif))', formatted_text, re.IGNORECASE)
+
+# Remove os links de imagem do texto para não duplicar
+for link in image_links:
+    formatted_text = formatted_text.replace(link, "").strip()
+
+# Exibe o texto da resposta
+st.markdown(
+    f"<div style='text-align:center; margin-top:20px;'>{formatted_text.replace(chr(10), '<br/>')}</div>",
+    unsafe_allow_html=True
+)
+
+# Exibe as imagens encontradas
+for img_url in image_links:
+    st.image(img_url, use_column_width=True)
 
 # ===== Versão no rodapé =====
 st.markdown(
