@@ -4,7 +4,7 @@ import json, base64, os, re, requests
 import gspread
 from google.oauth2.service_account import Credentials
 from google import genai
-import re
+import io
 
 # ===== Funções auxiliares =====
 
@@ -37,7 +37,6 @@ def format_dollar_values(text, rate):
         return formatted
     else:
         return text
-
 
 # ===== Configuração da página =====
 st.set_page_config(page_title="PlasPrint IA", page_icon="favicon.ico", layout="wide")
@@ -159,8 +158,6 @@ def build_context(dfs, max_chars=30000):
         context = context[:max_chars] + "\n...[CONTEXTO TRUNCADO]"
     return context
 
-import io
-
 def show_drive_images_from_text(text):
     drive_links = re.findall(r'https?://drive\.google\.com/file/d/([a-zA-Z0-9_-]+)/view\?usp=drive_link', text)
     if drive_links:
@@ -229,17 +226,12 @@ Responda de forma clara, sem citar a aba ou linha da planilha.
                             unsafe_allow_html=True
                         )
 
-                        # Mostra imagens encontradas (links diretos)
-                        show_images_from_text(resp.text)
-
                         # Mostra imagens do Google Drive (links do Drive)
                         show_drive_images_from_text(resp.text)
 
                     except Exception as e:
                         st.error(f"Erro ao chamar Gemini: {e}")
             st.session_state.botao_texto = "Buscar"
-
-
 
 # ===== Versão no rodapé =====
 st.markdown(
