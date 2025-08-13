@@ -7,6 +7,7 @@ from google import genai
 
 # ===== Funções auxiliares =====
 
+# Cotação do dólar
 def get_usd_brl_rate():
     try:
         res = requests.get("https://economia.awesomeapi.com.br/json/last/USD-BRL")
@@ -16,6 +17,7 @@ def get_usd_brl_rate():
         st.error(f"Erro ao obter cotação do dólar: {e}")
         return None
 
+# Formatar valores em dólar
 def format_dollar_values(text, rate):
     def repl(match):
         dollar_str = match.group(0)
@@ -156,40 +158,32 @@ col_esq, col_meio, col_dir = st.columns([1, 2, 1])
 with col_meio:
     st.markdown("<h1 class='custom-font'>PlasPrint IA</h1><br>", unsafe_allow_html=True)
     st.markdown("<p class='custom-font'>Qual a sua dúvida?</p>", unsafe_allow_html=True)
-    pergunta = st.text_input("", key="pergunta", label_visibility="collapsed")
+    pergunta = st.text_input("", key="central_input", label_visibility="collapsed")
 
-    # ===== Estados do botão e processamento =====
-    if "pergunta_processando" not in st.session_state:
-        st.session_state.pergunta_processando = False
-    if "pergunta_em_espera" not in st.session_state:
-        st.session_state.pergunta_em_espera = ""
+    # ===== Estado do botão =====
+    if "botao_texto" not in st.session_state:
+        st.session_state.botao_texto = "Buscar"
 
-    def acionar_busca():
-        if st.session_state.pergunta.strip() == "":
+    buscar = st.button(st.session_state.botao_texto, use_container_width=True)
+
+    if buscar:
+        if not pergunta.strip():
             st.warning("Digite uma pergunta.")
         else:
-            st.session_state.pergunta_processando = True
-            st.session_state.pergunta_em_espera = st.session_state.pergunta
-
-    # Texto do botão dinâmico
-    botao_texto = "Aguarde" if st.session_state.pergunta_processando else "Buscar"
-    st.button(botao_texto, use_container_width=True, on_click=acionar_busca)
-
-    # Processamento da pergunta
-    if st.session_state.pergunta_processando:
-        with st.spinner("Processando resposta..."):
-            rate = get_usd_brl_rate()
-            if rate is None:
-                st.error("Não foi possível obter a cotação do dólar.")
-            else:
-                dfs = {
-                    "erros": erros_df,
-                    "trabalhos": trabalhos_df,
-                    "dacen": dacen_df,
-                    "psi": psi_df
-                }
-                context = build_context(dfs)
-                prompt = f"""
+            st.session_state.botao_texto = "Aguarde"
+            with st.spinner("Processando resposta..."):
+                rate = get_usd_brl_rate()
+                if rate is None:
+                    st.error("Não foi possível obter a cotação do dólar.")
+                else:
+                    dfs = {
+                        "erros": erros_df,
+                        "trabalhos": trabalhos_df,
+                        "dacen": dacen_df,
+                        "psi": psi_df
+                    }
+                    context = build_context(dfs)
+                    prompt = f"""
 Você é um assistente técnico que responde em português.
 Baseie-se **apenas** nos dados abaixo (planilhas). 
 Responda de forma objetiva, sem citar de onde veio a informação ou a fonte.
@@ -199,21 +193,20 @@ Dados:
 {context}
 
 Pergunta:
-{st.session_state.pergunta_em_espera}
+{pergunta}
 
 Responda de forma clara, sem citar a aba ou linha da planilha.
 """
-                try:
-                    resp = client.models.generate_content(model="gemini-2.5-flash", contents=prompt)
-                    output_fmt = format_dollar_values(resp.text, rate)
-                    st.markdown(
-                        f"<div style='text-align:center; margin-top:20px;'>{output_fmt.replace('\n','<br/>')}</div>",
-                        unsafe_allow_html=True
-                    )
-                except Exception as e:
-                    st.error(f"Erro ao chamar Gemini: {e}")
-        st.session_state.pergunta_processando = False
-        st.session_state.pergunta_em_espera = ""
+                    try:
+                        resp = client.models.generate_content(model="gemini-2.5-flash", contents=prompt)
+                        output_fmt = format_dollar_values(resp.text, rate)
+                        st.markdown(
+                            f"<div style='text-align:center; margin-top:20px;'>{output_fmt.replace('\n','<br/>')}</div>",
+                            unsafe_allow_html=True
+                        )
+                    except Exception as e:
+                        st.error(f"Erro ao chamar Gemini: {e}")
+            st.session_state.botao_texto = "Buscar"
 
 # ===== Versão no rodapé =====
 st.markdown(
@@ -236,4 +229,25 @@ st.markdown(
 
 # ===== Logo no rodapé =====
 def get_base64_img(path):
-    with open(path, "rb")
+    with open(path, "rb") as f:
+        data = f.read()
+    return base64.b64encode(data).decode()
+
+img_base64_logo = get_base64_img("logo.png")
+
+st.markdown(
+    f"""
+    <style>
+    .logo-footer {{
+        position: fixed;
+        bottom: 5px;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 120px;
+        z-index: 100;
+    }}
+    </style>
+    <img src="data:image/png;base64,{img_base64_logo}" class="logo-footer" />
+    """,
+    unsafe_allow_html=True
+)
