@@ -27,11 +27,16 @@ def format_dollar_values(text, rate):
             return f"{dollar_str} (R$ {converted:,.2f})"
         except:
             return dollar_str
-    formatted = re.sub(r"\$\d+(?:\.\d+)?", repl, text)
-    if not formatted.endswith("\n"):
-        formatted += "\n"
-    formatted += "(valores sem impostos)"
-    return formatted
+
+    if "$" in text:
+        formatted = re.sub(r"\$\d+(?:\.\d+)?", repl, text)
+        if not formatted.endswith("\n"):
+            formatted += "\n"
+        formatted += "(valores sem impostos)"
+        return formatted
+    else:
+        return text
+
 
 # ===== Configuração da página =====
 st.set_page_config(page_title="PlasPrint IA", page_icon="favicon.ico", layout="wide")
