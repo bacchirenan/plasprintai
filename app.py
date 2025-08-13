@@ -228,7 +228,7 @@ st.markdown(
     .logo-footer {{
         position: fixed;
         bottom: 5px;
-        left: 50%;
+        left: 60%;
         transform: translateX(-50%);
         width: 120px;
         z-index: 100;
