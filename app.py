@@ -206,20 +206,22 @@ Responda de forma clara, sem citar a aba ou linha da planilha.
                         resp = client.models.generate_content(model="gemini-2.5-flash", contents=prompt)
                         output_fmt = format_dollar_values(resp.text, rate)
 
-                        # Regex para detectar URLs de imagens no texto
-                        img_pattern = re.compile(r'(https?://\S+\.(?:png|jpg|jpeg|gif))', re.IGNORECASE)
-
-                        # Remove URLs de imagem do texto para exibir só o texto limpo
-                        texto_sem_urls = img_pattern.sub('', output_fmt).strip()
-
-                        # Exibe o texto sem links
-                        if texto_sem_urls:
-                            st.markdown(f"<div style='text-align:center'>{texto_sem_urls.replace(chr(10), '<br>')}</div>", unsafe_allow_html=True)
-
-                        # Exibe todas as imagens encontradas inline
+                        # Novo código para mostrar imagens inline
+                        img_pattern = re.compile(r'(https?://\S+\.(?:png|jpg|jpeg|gif)(?:\?\S*)?)', re.IGNORECASE)
                         img_urls = img_pattern.findall(output_fmt)
+                        texto_sem_imgs = img_pattern.sub('', output_fmt).strip()
+
+                        if texto_sem_imgs:
+                            st.markdown(
+                                f"<div style='text-align:center; margin-top:20px;'>{texto_sem_imgs.replace(chr(10), '<br/>')}</div>",
+                                unsafe_allow_html=True
+                            )
+
                         for url in img_urls:
-                            st.image(url, use_column_width=True)
+                            try:
+                                st.image(url, use_column_width=True)
+                            except Exception as e:
+                                st.warning(f"Não consegui carregar a imagem: {url}")
 
                     except Exception as e:
                         st.error(f"Erro ao chamar Gemini: {e}")
