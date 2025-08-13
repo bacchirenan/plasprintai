@@ -206,20 +206,20 @@ Responda de forma clara, sem citar a aba ou linha da planilha.
                         resp = client.models.generate_content(model="gemini-2.5-flash", contents=prompt)
                         output_fmt = format_dollar_values(resp.text, rate)
 
-                        # Exibir texto + imagens inline:
-                        lines = output_fmt.split("\n")
-                        for line in lines:
-                            # Detecta URLs de imagem (jpg, jpeg, png)
-                            img_urls = re.findall(r'(https?://\S+\.(?:png|jpg|jpeg))', line, re.IGNORECASE)
-                            if img_urls:
-                                for url in img_urls:
-                                    st.image(url, use_column_width=True)
-                                # Remove URLs da linha para não repetir como texto
-                                text_without_urls = re.sub(r'(https?://\S+\.(?:png|jpg|jpeg))', '', line, flags=re.IGNORECASE).strip()
-                                if text_without_urls:
-                                    st.markdown(f"<div style='text-align:center'>{text_without_urls}</div>", unsafe_allow_html=True)
-                            else:
-                                st.markdown(f"<div style='text-align:center'>{line}</div>", unsafe_allow_html=True)
+                        # Regex para detectar URLs de imagens no texto
+                        img_pattern = re.compile(r'(https?://\S+\.(?:png|jpg|jpeg|gif))', re.IGNORECASE)
+
+                        # Remove URLs de imagem do texto para exibir só o texto limpo
+                        texto_sem_urls = img_pattern.sub('', output_fmt).strip()
+
+                        # Exibe o texto sem links
+                        if texto_sem_urls:
+                            st.markdown(f"<div style='text-align:center'>{texto_sem_urls.replace(chr(10), '<br>')}</div>", unsafe_allow_html=True)
+
+                        # Exibe todas as imagens encontradas inline
+                        img_urls = img_pattern.findall(output_fmt)
+                        for url in img_urls:
+                            st.image(url, use_column_width=True)
 
                     except Exception as e:
                         st.error(f"Erro ao chamar Gemini: {e}")
