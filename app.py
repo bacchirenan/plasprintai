@@ -173,6 +173,10 @@ def show_drive_images_from_text(text):
             except Exception as e:
                 st.warning(f"Não foi possível carregar a imagem do Drive: {direct_url}\nErro: {e}")
 
+def remove_drive_links(text):
+    # Remove links do Google Drive do texto
+    return re.sub(r'https?://drive\.google\.com/file/d/[a-zA-Z0-9_-]+/view\?usp=drive_link', '', text)
+
 # ===== Layout principal =====
 col_esq, col_meio, col_dir = st.columns([1, 2, 1])
 with col_meio:
@@ -220,8 +224,9 @@ Responda de forma clara, sem citar a aba ou linha da planilha.
                     try:
                         resp = client.models.generate_content(model="gemini-2.5-flash", contents=prompt)
                         output_fmt = format_dollar_values(resp.text, rate)
+                        output_fmt = remove_drive_links(output_fmt)  # Remove links do texto
 
-                        # Mostra o texto formatado
+                        # Mostra o texto formatado sem links
                         st.markdown(
                             f"<div style='text-align:center; margin-top:20px;'>{output_fmt.replace(chr(10),'<br/>')}</div>",
                             unsafe_allow_html=True
