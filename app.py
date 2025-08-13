@@ -30,7 +30,7 @@ def format_dollar_values(text, rate):
     formatted = re.sub(r"\$\d+(?:\.\d+)?", repl, text)
     if not formatted.endswith("\n"):
         formatted += "\n"
-    formatted += "(valores sem impostos)"
+    formatted += "(Valores sem Impostos)"
     return formatted
 
 # ===== Configuração da página =====
@@ -189,7 +189,7 @@ st.markdown(
     <style>
     .version-tag {
         position: fixed;
-        bottom: 10px;
+        bottom: 20px;
         right: 25px;
         font-size: 12px;
         color: white;
