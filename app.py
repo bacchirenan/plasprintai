@@ -157,9 +157,9 @@ def build_context(dfs, max_chars=30000):
         context = context[:max_chars] + "\n...[CONTEXTO TRUNCADO]"
     return context
 
-# Função para exibir imagens do Google Drive
+# Função para exibir imagens do Google Drive (todos os formatos de link)
 def show_drive_images_from_text(text):
-    drive_links = re.findall(r'https?://drive\.google\.com/file/d/([a-zA-Z0-9_-]+)/view\?usp=drive_link', text)
+    drive_links = re.findall(r'https?://drive\.google\.com/(?:file/d/|open\?id=)([a-zA-Z0-9_-]+)', text)
     if drive_links:
         st.markdown("### Imagens do Google Drive:")
         for file_id in drive_links:
