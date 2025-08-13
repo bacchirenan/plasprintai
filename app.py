@@ -69,7 +69,7 @@ st.markdown(
         font-weight: normal;
         font-style: normal;
     }}
-    h1.custom-font {{ font-family: 'CustomFont', sans-serif !important; text-align: center; font-size: 170% }}
+    h1.custom-font {{ font-family: 'CustomFont', sans-serif !important; text-align: center; font-size: 400% }}
     p.custom-font {{ font-family: 'CustomFont', sans-serif !important; font-weight: bold; text-align: left; }}
     div.stButton > button {{ font-family: 'CustomFont', sans-serif !important; }}
     div.stTextInput > div > input {{ font-family: 'CustomFont', sans-serif !important; }}
