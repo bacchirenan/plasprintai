@@ -1,14 +1,18 @@
 import streamlit as st
 import pandas as pd
-import json, base64, os, re
+import json, base64, os, re, requests
 import gspread
 from google.oauth2.service_account import Credentials
 from google import genai
 
-# Set page config com favicon (coloque seu favicon.ico na pasta)
+# ========================
+# CONFIGURAÇÃO DA PÁGINA
+# ========================
 st.set_page_config(page_title="PlasPrint IA", page_icon="favicon.ico", layout="wide")
 
-# Injetar favicon também via HTML para garantir
+# ========================
+# FAVICON
+# ========================
 def inject_favicon():
     favicon_path = "favicon.ico"
     try:
@@ -23,6 +27,9 @@ def inject_favicon():
 
 inject_favicon()
 
+# ========================
+# FUNÇÕES DE BASE64
+# ========================
 def get_base64_of_jpg(image_path):
     with open(image_path, "rb") as img_file:
         return base64.b64encode(img_file.read()).decode()
@@ -31,6 +38,9 @@ def get_base64_font(path):
     with open(path, "rb") as f:
         return base64.b64encode(f.read()).decode()
 
+# ========================
+# FUNDO E FONTES
+# ========================
 background_image = "background.jpg"
 img_base64 = get_base64_of_jpg(background_image)
 font_base64 = get_base64_font("font.ttf")
@@ -44,26 +54,21 @@ st.markdown(
         font-weight: normal;
         font-style: normal;
     }}
-
     h1.custom-font {{
         font-family: 'CustomFont', sans-serif !important;
         text-align: center;
     }}
-
     p.custom-font {{
         font-family: 'CustomFont', sans-serif !important;
         font-weight: bold;
         text-align: left;
     }}
-
     div.stButton > button {{
         font-family: 'CustomFont', sans-serif !important;
     }}
-
     div.stTextInput > div > input {{
         font-family: 'CustomFont', sans-serif !important;
     }}
-
     .stApp {{
         background-image: url("data:image/jpg;base64,{img_base64}");
         background-size: cover;
@@ -76,13 +81,15 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-# === Carregar segredos (streamlit secrets) ===
+# ========================
+# SEGREDOS
+# ========================
 try:
     GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
     SHEET_ID = st.secrets["SHEET_ID"]
     SERVICE_ACCOUNT_B64 = st.secrets["SERVICE_ACCOUNT_B64"]
 except Exception as e:
-    st.error("Por favor, configure os segredos: GEMINI_API_KEY, SHEET_ID, SERVICE_ACCOUNT_B64 (veja instruções).")
+    st.error("Por favor, configure os segredos: GEMINI_API_KEY, SHEET_ID, SERVICE_ACCOUNT_B64.")
     st.stop()
 
 sa_json = json.loads(base64.b64decode(SERVICE_ACCOUNT_B64).decode())
@@ -93,7 +100,7 @@ gc = gspread.authorize(creds)
 try:
     sh = gc.open_by_key(SHEET_ID)
 except Exception as e:
-    st.error(f"Não consegui abrir a planilha. Verifique o SHEET_ID e se a planilha foi compartilhada com o service account.\nErro: {e}")
+    st.error(f"Não consegui abrir a planilha. Verifique o SHEET_ID e o compartilhamento.\nErro: {e}")
     st.stop()
 
 def read_ws(name):
@@ -114,9 +121,15 @@ st.sidebar.write("trabalhos:", len(trabalhos_df))
 st.sidebar.write("dacen:", len(dacen_df))
 st.sidebar.write("psi:", len(psi_df))
 
+# ========================
+# CLIENTE GEMINI
+# ========================
 os.environ["GEMINI_API_KEY"] = GEMINI_API_KEY
 client = genai.Client()
 
+# ========================
+# MONTA CONTEXTO
+# ========================
 def build_context(dfs, max_chars=30000):
     parts = []
     for name, df in dfs.items():
@@ -131,6 +144,42 @@ def build_context(dfs, max_chars=30000):
         context = context[:max_chars] + "\n...[CONTEXTO TRUNCADO]"
     return context
 
+# ========================
+# FUNÇÃO PARA BUSCAR COTAÇÃO USD
+# ========================
+def fetch_usd_brl_rate():
+    try:
+        url = "https://economia.awesomeapi.com.br/json/last/USD-BRL"
+        resp = requests.get(url, timeout=5)
+        data = resp.json()
+        rate = float(data["USDBRL"]["bid"])
+        return rate
+    except Exception as e:
+        st.error(f"Erro ao obter cotação do dólar: {e}")
+        return None
+
+# ========================
+# FUNÇÃO PARA CONVERTER VALORES EM DÓLAR NO TEXTO
+# ========================
+def convert_values_in_text(text, rate):
+    pattern = re.compile(
+        r'(?P<symbol>\$)?(?P<amount>\d+(?:[.,]\d{1,2})?)(?:\s*(?P<abbr>USD))?',
+        re.IGNORECASE
+    )
+    def repl(match):
+        amt_str = match.group("amount")
+        amt_clean = amt_str.replace(",", ".")
+        try:
+            value = float(amt_clean)
+        except:
+            return match.group(0)
+        reais = value * rate
+        return f"{match.group(0)} (~R$ {reais:,.2f})"
+    return pattern.sub(repl, text)
+
+# ========================
+# INTERFACE
+# ========================
 col_esq, col_meio, col_dir = st.columns([1, 2, 1])
 with col_meio:
     st.markdown("<h1 class='custom-font'>PlasPrint IA</h1>", unsafe_allow_html=True)
@@ -159,14 +208,21 @@ Pergunta:
 Responda de forma clara, sem citar a aba ou linha da planilha.
 """
             try:
+                rate = fetch_usd_brl_rate()
                 resp = client.models.generate_content(model="gemini-2.5-flash", contents=prompt)
+                text = resp.text
+                if rate:
+                    text = convert_values_in_text(text, rate)
                 st.markdown(
-                    f"<div style='text-align:center; margin-top:20px;'>{resp.text}</div>",
+                    f"<div style='text-align:center; margin-top:20px;'>{text}</div>",
                     unsafe_allow_html=True
                 )
             except Exception as e:
                 st.error(f"Erro ao chamar Gemini: {e}")
 
+# ========================
+# VERSÃO
+# ========================
 st.markdown(
     """
     <style>
@@ -185,6 +241,9 @@ st.markdown(
     unsafe_allow_html=True
 )
 
+# ========================
+# LOGO NO RODAPÉ
+# ========================
 def get_base64_img(path):
     with open(path, "rb") as f:
         data = f.read()
