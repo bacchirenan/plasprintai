@@ -72,7 +72,7 @@ st.markdown(
     h1.custom-font {{
         font-family: 'CustomFont', sans-serif !important;
         text-align: center;
-        font-size: 380%; /* aumento de 70% no tamanho do título */
+        font-size: 380%;
     }}
     p.custom-font {{
         font-family: 'CustomFont', sans-serif !important;
@@ -156,22 +156,34 @@ def build_context(dfs, max_chars=30000):
 # ===== Layout principal =====
 col_esq, col_meio, col_dir = st.columns([1, 2, 1])
 with col_meio:
-    st.markdown("<h1 class='custom-font'>PlasPrint IA</h1><br>", unsafe_allow_html=True)  # linha extra
+    st.markdown("<h1 class='custom-font'>PlasPrint IA</h1><br>", unsafe_allow_html=True)
     st.markdown("<p class='custom-font'>Qual a sua dúvida?</p>", unsafe_allow_html=True)
     pergunta = st.text_input("", key="central_input", label_visibility="collapsed")
-    buscar = st.button("Buscar", use_container_width=True)
+
+    # ===== Estado do botão =====
+    if "botao_texto" not in st.session_state:
+        st.session_state.botao_texto = "Buscar"
+
+    buscar = st.button(st.session_state.botao_texto, use_container_width=True)
 
     if buscar:
         if not pergunta.strip():
             st.warning("Digite uma pergunta.")
         else:
-            rate = get_usd_brl_rate()
-            if rate is None:
-                st.error("Não foi possível obter a cotação do dólar.")
-            else:
-                dfs = {"erros": erros_df, "trabalhos": trabalhos_df, "dacen": dacen_df, "psi": psi_df}
-                context = build_context(dfs)
-                prompt = f"""
+            st.session_state.botao_texto = "Aguarde"
+            with st.spinner("Processando resposta..."):
+                rate = get_usd_brl_rate()
+                if rate is None:
+                    st.error("Não foi possível obter a cotação do dólar.")
+                else:
+                    dfs = {
+                        "erros": erros_df,
+                        "trabalhos": trabalhos_df,
+                        "dacen": dacen_df,
+                        "psi": psi_df
+                    }
+                    context = build_context(dfs)
+                    prompt = f"""
 Você é um assistente técnico que responde em português.
 Baseie-se **apenas** nos dados abaixo (planilhas). 
 Responda de forma objetiva, sem citar de onde veio a informação ou a fonte.
@@ -185,15 +197,16 @@ Pergunta:
 
 Responda de forma clara, sem citar a aba ou linha da planilha.
 """
-                try:
-                    resp = client.models.generate_content(model="gemini-2.5-flash", contents=prompt)
-                    output_fmt = format_dollar_values(resp.text, rate)
-                    st.markdown(
-                        f"<div style='text-align:center; margin-top:20px;'>{output_fmt.replace('\n','<br/>')}</div>",
-                        unsafe_allow_html=True
-                    )
-                except Exception as e:
-                    st.error(f"Erro ao chamar Gemini: {e}")
+                    try:
+                        resp = client.models.generate_content(model="gemini-2.5-flash", contents=prompt)
+                        output_fmt = format_dollar_values(resp.text, rate)
+                        st.markdown(
+                            f"<div style='text-align:center; margin-top:20px;'>{output_fmt.replace('\n','<br/>')}</div>",
+                            unsafe_allow_html=True
+                        )
+                    except Exception as e:
+                        st.error(f"Erro ao chamar Gemini: {e}")
+            st.session_state.botao_texto = "Buscar"
 
 # ===== Versão no rodapé =====
 st.markdown(
