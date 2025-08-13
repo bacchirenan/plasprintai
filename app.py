@@ -4,6 +4,7 @@ import json, base64, os, re, requests
 import gspread
 from google.oauth2.service_account import Credentials
 from google import genai
+import re
 
 # ===== Funções auxiliares =====
 
@@ -158,6 +159,30 @@ def build_context(dfs, max_chars=30000):
         context = context[:max_chars] + "\n...[CONTEXTO TRUNCADO]"
     return context
 
+def show_images_from_text(text):
+    # Extrai URLs de imagens do texto
+    img_urls = re.findall(r'(https?://\S+\.(?:png|jpg|jpeg|gif|bmp))', text, re.IGNORECASE)
+    if img_urls:
+        st.markdown("### Imagens encontradas:")
+        for url in img_urls:
+            try:
+                st.image(url, use_container_width=True)
+            except Exception:
+                st.warning(f"Não foi possível carregar a imagem: {url}")
+
+def show_drive_images_from_text(text):
+    # Extrai links do Google Drive e tenta gerar embed
+    drive_links = re.findall(r'(https?://drive\.google\.com/file/d/([a-zA-Z0-9_-]+)/view\?usp=drive_link)', text)
+    if drive_links:
+        st.markdown("### Imagens do Google Drive:")
+        for full_url, file_id in drive_links:
+            # Monta a URL direta para a imagem (Google Drive não é 100% garantido, depende da permissão)
+            direct_url = f"https://drive.google.com/uc?export=view&id={file_id}"
+            try:
+                st.image(direct_url, use_container_width=True)
+            except Exception:
+                st.warning(f"Não foi possível carregar a imagem do Drive: {full_url}")
+
 # ===== Layout principal =====
 col_esq, col_meio, col_dir = st.columns([1, 2, 1])
 with col_meio:
@@ -206,45 +231,17 @@ Responda de forma clara, sem citar a aba ou linha da planilha.
                         resp = client.models.generate_content(model="gemini-2.5-flash", contents=prompt)
                         output_fmt = format_dollar_values(resp.text, rate)
 
-                        # ==== Novo: mostrar imagens inline ====
+                        # Mostra o texto formatado
+                        st.markdown(
+                            f"<div style='text-align:center; margin-top:20px;'>{output_fmt.replace(chr(10),'<br/>')}</div>",
+                            unsafe_allow_html=True
+                        )
 
-                        # Extrai URLs do texto
-                        img_pattern = re.compile(r'(https?://\S+)', re.IGNORECASE)
-                        urls = img_pattern.findall(output_fmt)
+                        # Mostra imagens encontradas (links diretos)
+                        show_images_from_text(resp.text)
 
-                        # Função para converter link do Google Drive em link direto
-                        def convert_drive_link(url):
-                            m = re.search(r"https://drive\.google\.com/file/d/([a-zA-Z0-9_-]+)", url)
-                            if m:
-                                file_id = m.group(1)
-                                return f"https://drive.google.com/uc?export=view&id={file_id}"
-                            return url
-
-                        img_urls = []
-                        for u in urls:
-                            u_conv = convert_drive_link(u)
-                            if u_conv.lower().endswith(('.png', '.jpg', '.jpeg', '.gif')) or "drive.google.com/uc?" in u_conv:
-                                img_urls.append(u_conv)
-
-                        # Remove URLs do texto para não mostrar duplicado
-                        texto_sem_imgs = output_fmt
-                        for url in urls:
-                            texto_sem_imgs = texto_sem_imgs.replace(url, '')
-                        texto_sem_imgs = texto_sem_imgs.strip()
-
-                        # Mostrar texto limpo
-                        if texto_sem_imgs:
-                            st.markdown(
-                                f"<div style='text-align:center; margin-top:20px;'>{texto_sem_imgs.replace(chr(10), '<br/>')}</div>",
-                                unsafe_allow_html=True
-                            )
-
-                        # Mostrar imagens
-                        for url in img_urls:
-                            try:
-                                st.image(url, use_column_width=True)
-                            except Exception as e:
-                                st.warning(f"Não consegui carregar a imagem: {url}")
+                        # Mostra imagens do Google Drive (links do Drive)
+                        show_drive_images_from_text(resp.text)
 
                     except Exception as e:
                         st.error(f"Erro ao chamar Gemini: {e}")
