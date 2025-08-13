@@ -201,7 +201,7 @@ st.markdown(
     <style>
     .version-tag {
         position: fixed;
-        bottom: 40px;
+        bottom: 50px;
         right: 25px;
         font-size: 12px;
         color: white;
@@ -228,7 +228,7 @@ st.markdown(
     .logo-footer {{
         position: fixed;
         bottom: 5px;
-        left: 60%;
+        left: 50%;
         transform: translateX(-50%);
         width: 120px;
         z-index: 100;
