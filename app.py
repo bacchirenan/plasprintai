@@ -159,22 +159,26 @@ def fetch_usd_brl_rate():
         return None
 
 # ========================
-# FUNÇÃO PARA CONVERTER VALORES EM DÓLAR NO TEXTO
+# CONVERSÃO SOMENTE PARA PREÇOS EM USD
 # ========================
-def convert_values_in_text(text, rate):
+def convert_usd_in_text(text, rate):
+    # Detecta apenas se tiver símbolo $ ou USD explícito
     pattern = re.compile(
-        r'(?P<symbol>\$)?(?P<amount>\d+(?:[.,]\d{1,2})?)(?:\s*(?P<abbr>USD))?',
+        r'(\$\s?\d+(?:[.,]\d{1,2})|\d+(?:[.,]\d{1,2})\s?USD)',
         re.IGNORECASE
     )
+
     def repl(match):
-        amt_str = match.group("amount")
+        raw = match.group(0)
+        amt_str = re.sub(r'[^\d,\.]', '', raw)  # remove símbolos, deixa só números e vírgulas/pontos
         amt_clean = amt_str.replace(",", ".")
         try:
             value = float(amt_clean)
         except:
-            return match.group(0)
+            return raw
         reais = value * rate
-        return f"{match.group(0)} (~R$ {reais:,.2f})"
+        return f"{raw} (~R$ {reais:,.2f})"
+
     return pattern.sub(repl, text)
 
 # ========================
@@ -212,7 +216,7 @@ Responda de forma clara, sem citar a aba ou linha da planilha.
                 resp = client.models.generate_content(model="gemini-2.5-flash", contents=prompt)
                 text = resp.text
                 if rate:
-                    text = convert_values_in_text(text, rate)
+                    text = convert_usd_in_text(text, rate)
                 st.markdown(
                     f"<div style='text-align:center; margin-top:20px;'>{text}</div>",
                     unsafe_allow_html=True
