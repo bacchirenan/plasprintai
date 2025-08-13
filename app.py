@@ -30,7 +30,7 @@ def format_dollar_values(text, rate):
     formatted = re.sub(r"\$\d+(?:\.\d+)?", repl, text)
     if not formatted.endswith("\n"):
         formatted += "\n"
-    formatted += "(Valores sem Impostos)"
+    formatted += "(valores sem impostos)"
     return formatted
 
 # ===== Configuração da página =====
@@ -69,10 +69,22 @@ st.markdown(
         font-weight: normal;
         font-style: normal;
     }}
-    h1.custom-font {{ font-family: 'CustomFont', sans-serif !important; text-align: center; }}
-    p.custom-font {{ font-family: 'CustomFont', sans-serif !important; font-weight: bold; text-align: left; }}
-    div.stButton > button {{ font-family: 'CustomFont', sans-serif !important; }}
-    div.stTextInput > div > input {{ font-family: 'CustomFont', sans-serif !important; }}
+    h1.custom-font {{
+        font-family: 'CustomFont', sans-serif !important;
+        text-align: center;
+        font-size: 170%; /* aumento de 70% no tamanho do título */
+    }}
+    p.custom-font {{
+        font-family: 'CustomFont', sans-serif !important;
+        font-weight: bold;
+        text-align: left;
+    }}
+    div.stButton > button {{
+        font-family: 'CustomFont', sans-serif !important;
+    }}
+    div.stTextInput > div > input {{
+        font-family: 'CustomFont', sans-serif !important;
+    }}
     .stApp {{
         background-image: url("data:image/jpg;base64,{img_base64}");
         background-size: cover;
@@ -189,7 +201,7 @@ st.markdown(
     <style>
     .version-tag {
         position: fixed;
-        bottom: 50px;
+        bottom: 10px;
         right: 25px;
         font-size: 12px;
         color: white;
