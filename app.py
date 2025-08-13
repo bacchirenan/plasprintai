@@ -189,7 +189,7 @@ st.markdown(
     <style>
     .version-tag {
         position: fixed;
-        bottom: 20px;
+        bottom: 50px;
         right: 25px;
         font-size: 12px;
         color: white;
