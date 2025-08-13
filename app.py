@@ -159,10 +159,11 @@ def build_context(dfs, max_chars=30000):
     return context
 
 def show_drive_images_from_text(text):
-    drive_links = re.findall(r'https?://drive\.google\.com/file/d/([a-zA-Z0-9_-]+)/view\?usp=drive_link', text)
+    # Extrai IDs válidos de arquivos do Google Drive
+    drive_links = re.findall(r'https?://drive\.google\.com/file/d/([a-zA-Z0-9_-]+)[^/]*/view', text)
     if drive_links:
-        st.markdown("### Imagens do Google Drive:")
         for file_id in drive_links:
+            file_id = file_id.rstrip("_")  # Remove underscore final se houver
             direct_url = f"https://drive.google.com/uc?export=view&id={file_id}"
             try:
                 response = requests.get(direct_url)
@@ -226,7 +227,7 @@ Responda de forma clara, sem citar a aba ou linha da planilha.
                             unsafe_allow_html=True
                         )
 
-                        # Mostra imagens do Google Drive (links do Drive)
+                        # Mostra apenas as imagens do Google Drive
                         show_drive_images_from_text(resp.text)
 
                     except Exception as e:
