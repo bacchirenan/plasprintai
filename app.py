@@ -30,7 +30,10 @@ except Exception as e:
 def show_drive_images_from_text(text):
     """
     Procura links do Google Drive no texto e exibe as imagens no Streamlit.
-    Funciona tanto para links com 'id=' quanto para links já no formato export/view.
+    Funciona para:
+      - Links com 'export=view'
+      - Links com 'id='
+      - Links do tipo /file/d/ID/view
     """
     drive_links = re.findall(
         r'(https?://drive\.google\.com[^\s]+)',
@@ -44,13 +47,23 @@ def show_drive_images_from_text(text):
             try:
                 if "export=view" in link:
                     img_url = link
-                else:
+                elif "/file/d/" in link:
+                    match = re.search(r"/file/d/([a-zA-Z0-9_-]+)", link)
+                    if match:
+                        file_id = match.group(1)
+                        img_url = f"https://drive.google.com/uc?export=view&id={file_id}"
+                    else:
+                        continue
+                elif "id=" in link:
                     match = re.search(r"id=([a-zA-Z0-9_-]+)", link)
                     if match:
                         file_id = match.group(1)
                         img_url = f"https://drive.google.com/uc?export=view&id={file_id}"
                     else:
                         continue
+                else:
+                    continue
+
                 st.image(img_url, use_container_width=True)
             except Exception as e:
                 st.warning(f"Não foi possível carregar a imagem: {link}\nErro: {e}")
@@ -65,8 +78,8 @@ except Exception as e:
 model = genai.GenerativeModel("gemini-1.5-pro")
 
 # === Interface ===
-st.markdown("<h1 style='text-align: center; font-size: 40px;'>PlasPrint IA</h1>", unsafe_allow_html=True)
-st.write("\n")
+st.markdown("<h1 style='text-align: center; font-size: 68px;'>PlasPrint IA</h1>", unsafe_allow_html=True)
+st.write("\n\n")
 st.markdown("<h3 style='text-align: left;'>Qual a sua dúvida?</h3>", unsafe_allow_html=True)
 
 user_input = st.text_area("", height=100)
