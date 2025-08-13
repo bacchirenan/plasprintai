@@ -159,29 +159,21 @@ def build_context(dfs, max_chars=30000):
         context = context[:max_chars] + "\n...[CONTEXTO TRUNCADO]"
     return context
 
-def show_images_from_text(text):
-    # Extrai URLs de imagens do texto
-    img_urls = re.findall(r'(https?://\S+\.(?:png|jpg|jpeg|gif|bmp))', text, re.IGNORECASE)
-    if img_urls:
-        st.markdown("### Imagens encontradas:")
-        for url in img_urls:
-            try:
-                st.image(url, use_container_width=True)
-            except Exception:
-                st.warning(f"Não foi possível carregar a imagem: {url}")
+import io
 
 def show_drive_images_from_text(text):
-    # Extrai links do Google Drive e tenta gerar embed
-    drive_links = re.findall(r'(https?://drive\.google\.com/file/d/([a-zA-Z0-9_-]+)/view\?usp=drive_link)', text)
+    drive_links = re.findall(r'https?://drive\.google\.com/file/d/([a-zA-Z0-9_-]+)/view\?usp=drive_link', text)
     if drive_links:
         st.markdown("### Imagens do Google Drive:")
-        for full_url, file_id in drive_links:
-            # Monta a URL direta para a imagem (Google Drive não é 100% garantido, depende da permissão)
+        for file_id in drive_links:
             direct_url = f"https://drive.google.com/uc?export=view&id={file_id}"
             try:
-                st.image(direct_url, use_container_width=True)
-            except Exception:
-                st.warning(f"Não foi possível carregar a imagem do Drive: {full_url}")
+                response = requests.get(direct_url)
+                response.raise_for_status()
+                img_bytes = io.BytesIO(response.content)
+                st.image(img_bytes, use_container_width=True)
+            except Exception as e:
+                st.warning(f"Não foi possível carregar a imagem do Drive: {direct_url}\nErro: {e}")
 
 # ===== Layout principal =====
 col_esq, col_meio, col_dir = st.columns([1, 2, 1])
