@@ -4,6 +4,7 @@ import json, base64, os, re, requests, io
 import gspread
 from google.oauth2.service_account import Credentials
 from google import genai
+from unidecode import unidecode  # 🔹 para busca mais tolerante
 
 # ===== Configuração da página =====
 st.set_page_config(page_title="PlasPrint IA", page_icon="favicon.ico", layout="wide")
@@ -173,20 +174,25 @@ st.sidebar.write("psi:", len(psi_df))
 os.environ["GEMINI_API_KEY"] = GEMINI_API_KEY
 client = genai.Client()
 
-# ===== Busca inteligente =====
+# ===== Busca tolerante a variações =====
 def search_relevant_rows(dfs, query, max_per_sheet=50):
-    query_lower = query.lower()
+    query_norm = unidecode(query.lower())
+    query_terms = [t for t in query_norm.split() if len(t) > 2]
+
     results = {}
     for name, df in dfs.items():
         if df.empty:
             continue
-        mask = df.apply(
-            lambda row: row.astype(str).str.lower().str.contains(query_lower, na=False).any(),
-            axis=1
-        )
+
+        def row_match(row):
+            row_text = unidecode(" ".join(row.astype(str).tolist()).lower())
+            return any(term in row_text for term in query_terms)
+
+        mask = df.apply(row_match, axis=1)
         filtered = df[mask].head(max_per_sheet)
         if not filtered.empty:
             results[name] = filtered
+
     return results
 
 def build_context(dfs, max_chars=15000):
