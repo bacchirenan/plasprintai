@@ -1,4 +1,4 @@
-import streamlit as st 
+import streamlit as st
 import pandas as pd
 import json, base64, os, re, requests, io
 import gspread
@@ -173,27 +173,15 @@ st.sidebar.write("psi:", len(psi_df))
 os.environ["GEMINI_API_KEY"] = GEMINI_API_KEY
 client = genai.Client()
 
-# ===== Novo build_context com busca inteligente + fallback =====
-def build_context(dfs, pergunta, max_chars=15000):
+def build_context(dfs, max_chars=15000):
     parts = []
-    palavras = [p.strip() for p in pergunta.split() if len(p.strip()) > 2]  # ignora palavras curtas como "de", "a", etc.
     for name, df in dfs.items():
         if df.empty:
             continue
-
-        # filtro: linha que contenha QUALQUER palavra da pergunta
-        mask = df.apply(lambda row: any(row.astype(str).str.contains(p, case=False, na=False).any() for p in palavras), axis=1)
-        filtered = df[mask]
-
-        # fallback: se não achar nada, pega as primeiras 100 linhas
-        if filtered.empty:
-            filtered = df.head(100)
-
         parts.append(f"--- {name} ---")
-        for r in filtered.to_dict(orient="records"):
+        for r in df.head(200).to_dict(orient="records"):  # só 50 linhas por aba
             row_items = [f"{k}: {v}" for k,v in r.items() if v is not None and str(v).strip() != '']
             parts.append(" | ".join(row_items))
-
     context = "\n".join(parts)
     if len(context) > max_chars:
         context = context[:max_chars] + "\n...[CONTEXTO TRUNCADO]"
@@ -242,7 +230,7 @@ with col_meio:
                     st.error("Não foi possível obter a cotação do dólar.")
                 else:
                     dfs = {"erros": erros_df, "trabalhos": trabalhos_df, "dacen": dacen_df, "psi": psi_df}
-                    context = build_context(dfs, pergunta)
+                    context = build_context(dfs)
                     prompt = f"""
 Você é um assistente técnico que responde em português.
 Baseie-se **apenas** nos dados abaixo (planilhas). 
