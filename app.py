@@ -10,29 +10,7 @@ from datetime import datetime
 st.set_page_config(page_title="PlasPrint IA", page_icon="favicon.ico", layout="wide")
 
 # ===== Atualizar automaticamente =====
-st_autorefresh = st.experimental_rerun  # compatibilidade
-st_autorefresh = st.experimental_rerun
-st_autorefresh = st_autorefresh
-st_autorefresh = st_autorefresh
-st_autorefresh = st_autorefresh
-st_autorefresh = st_autorefresh
-st_autorefresh = st_autorefresh
-st_autorefresh = st_autorefresh
-
-# Força refresh a cada 60 segundos
-st_autorefresh = st.experimental_singleton(lambda: None)
-st_autorefresh = st.autorefresh = st.experimental_rerun
-st_autorefresh = st_autorefresh
-st_autorefresh = st_autorefresh
-
-st_autorefresh = st_autorefresh
-st_autorefresh = st_autorefresh
-st_autorefresh = st_autorefresh
-
-st_autorefresh = st.autorefresh = st.experimental_rerun
-st_autorefresh = st_autorefresh
-
-count = st.experimental_autorefresh(interval=60 * 1000, key="time_counter")
+count = st.experimental_autorefresh(interval=60 * 1000, key="time_counter")  # refresh a cada 60s
 
 # ===== Funções auxiliares =====
 @st.cache_data(ttl=300)  # Cache por 5 minutos
