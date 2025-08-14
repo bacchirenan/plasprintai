@@ -4,24 +4,9 @@ import json, base64, os, re, requests, io
 import gspread
 from google.oauth2.service_account import Credentials
 from google import genai
-from datetime import datetime
 
 # ===== Configuração da página =====
 st.set_page_config(page_title="PlasPrint IA", page_icon="favicon.ico", layout="wide")
-
-# ===== Mostrar Data e Hora no canto superior direito =====
-def show_datetime():
-    agora = datetime.now().strftime("%d/%m/%Y %H:%M")
-    st.markdown(f"""
-    <div style='position:fixed; top:10px; right:25px;
-                font-family:sans-serif; font-size:120%;
-                font-weight:bold; color:white; z-index:100;'>
-        {agora}
-    </div>
-    """, unsafe_allow_html=True)
-
-show_datetime()
-st.experimental_rerun()  # a página se atualiza automaticamente (recarrega)  
 
 # ===== Funções auxiliares =====
 @st.cache_data(ttl=300)  # Cache por 5 minutos
@@ -194,7 +179,7 @@ def build_context(dfs, max_chars=15000):
         if df.empty:
             continue
         parts.append(f"--- {name} ---")
-        for r in df.head(50).to_dict(orient="records"):
+        for r in df.head(50).to_dict(orient="records"):  # só 50 linhas por aba
             row_items = [f"{k}: {v}" for k,v in r.items() if v is not None and str(v).strip() != '']
             parts.append(" | ".join(row_items))
     context = "\n".join(parts)
