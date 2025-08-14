@@ -22,6 +22,7 @@ def get_usd_brl_rate():
 def format_dollar_values(text, rate):
     if "$" not in text or rate is None:
         return text
+
     money_regex = re.compile(r'\$\d{1,3}(?:[.,]\d{3})*(?:[.,]\d+)?')
 
     def parse_money_str(s):
@@ -55,8 +56,9 @@ def format_dollar_values(text, rate):
             return None
 
     def to_brazilian(n):
+        # Garantir duas casas decimais e formatação correta
         s = f"{n:,.2f}"
-        s = s.replace(',', 'X').replace('.', ',').replace('X', '.')
+        s = s.replace(",", "X").replace(".", ",").replace("X", ".")
         return s
 
     def repl(m):
@@ -69,6 +71,7 @@ def format_dollar_values(text, rate):
         return f"{orig} (R$ {brl})"
 
     formatted = money_regex.sub(repl, text)
+
     if not formatted.endswith("\n"):
         formatted += "\n"
     formatted += "(valores sem impostos)"
