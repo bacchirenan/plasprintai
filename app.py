@@ -4,9 +4,14 @@ import json, base64, os, re, requests, io
 import gspread
 from google.oauth2.service_account import Credentials
 from google import genai
+from datetime import datetime
+from streamlit_autorefresh import st_autorefresh  # para atualização automática
 
 # ===== Configuração da página =====
 st.set_page_config(page_title="PlasPrint IA", page_icon="favicon.ico", layout="wide")
+
+# ===== Auto Refresh a cada 60 segundos =====
+st_autorefresh(interval=60 * 1000, key="datetime_refresh")
 
 # ===== Funções auxiliares =====
 @st.cache_data(ttl=300)  # Cache por 5 minutos
@@ -127,8 +132,23 @@ div.stTextInput > div > input {{
     background-repeat: no-repeat;
     background-attachment: fixed;
 }}
+/* Data e hora no canto superior direito */
+.datetime-top {{
+    position: fixed;
+    top: 10px;
+    right: 25px;
+    font-family: 'CustomFont', sans-serif !important;
+    font-size: 120%;
+    font-weight: bold;
+    color: white;
+    z-index: 100;
+}}
 </style>
 """, unsafe_allow_html=True)
+
+# ===== Mostrar Data e Hora =====
+agora = datetime.now().strftime("%d/%m/%Y %H:%M")
+st.markdown(f'<div class="datetime-top">{agora}</div>', unsafe_allow_html=True)
 
 # ===== Carregar segredos =====
 try:
