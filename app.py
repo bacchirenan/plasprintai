@@ -173,14 +173,30 @@ st.sidebar.write("psi:", len(psi_df))
 os.environ["GEMINI_API_KEY"] = GEMINI_API_KEY
 client = genai.Client()
 
+# ===== Busca inteligente =====
+def search_relevant_rows(dfs, query, max_per_sheet=50):
+    query_lower = query.lower()
+    results = {}
+    for name, df in dfs.items():
+        if df.empty:
+            continue
+        mask = df.apply(
+            lambda row: row.astype(str).str.lower().str.contains(query_lower, na=False).any(),
+            axis=1
+        )
+        filtered = df[mask].head(max_per_sheet)
+        if not filtered.empty:
+            results[name] = filtered
+    return results
+
 def build_context(dfs, max_chars=15000):
     parts = []
     for name, df in dfs.items():
         if df.empty:
             continue
         parts.append(f"--- {name} ---")
-        for r in df.head(200).to_dict(orient="records"):  # só 50 linhas por aba
-            row_items = [f"{k}: {v}" for k,v in r.items() if v is not None and str(v).strip() != '']
+        for r in df.to_dict(orient="records"):
+            row_items = [f"{k}: {v}" for k,v in r.items() if v not in [None, ""]]
             parts.append(" | ".join(row_items))
     context = "\n".join(parts)
     if len(context) > max_chars:
@@ -230,8 +246,13 @@ with col_meio:
                     st.error("Não foi possível obter a cotação do dólar.")
                 else:
                     dfs = {"erros": erros_df, "trabalhos": trabalhos_df, "dacen": dacen_df, "psi": psi_df}
-                    context = build_context(dfs)
-                    prompt = f"""
+                    filtered_dfs = search_relevant_rows(dfs, pergunta)
+
+                    if not filtered_dfs:
+                        st.warning(f'Não encontrei nada relacionado a "{pergunta}" nas planilhas.')
+                    else:
+                        context = build_context(filtered_dfs)
+                        prompt = f"""
 Você é um assistente técnico que responde em português.
 Baseie-se **apenas** nos dados abaixo (planilhas). 
 Responda de forma objetiva, sem citar de onde veio a informação ou a fonte.
@@ -245,14 +266,14 @@ Pergunta:
 
 Responda de forma clara, sem citar a aba ou linha da planilha.
 """
-                    try:
-                        resp = client.models.generate_content(model="gemini-2.5-flash", contents=prompt)
-                        output_fmt = format_dollar_values(resp.text, rate)
-                        output_fmt = remove_drive_links(output_fmt)
-                        st.markdown(f"<div style='text-align:center; margin-top:20px;'>{output_fmt.replace(chr(10),'<br/>')}</div>", unsafe_allow_html=True)
-                        show_drive_images_from_text(resp.text)
-                    except Exception as e:
-                        st.error(f"Erro ao chamar Gemini: {e}")
+                        try:
+                            resp = client.models.generate_content(model="gemini-2.5-flash", contents=prompt)
+                            output_fmt = format_dollar_values(resp.text, rate)
+                            output_fmt = remove_drive_links(output_fmt)
+                            st.markdown(f"<div style='text-align:center; margin-top:20px;'>{output_fmt.replace(chr(10),'<br/>')}</div>", unsafe_allow_html=True)
+                            show_drive_images_from_text(resp.text)
+                        except Exception as e:
+                            st.error(f"Erro ao chamar Gemini: {e}")
             st.session_state.botao_texto = "Buscar"
 
 # ===== Rodapé e logo =====
