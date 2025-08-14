@@ -1,4 +1,4 @@
-import streamlit as st
+import streamlit as st 
 import pandas as pd
 import json, base64, os, re, requests, io
 import gspread
@@ -173,13 +173,19 @@ st.sidebar.write("psi:", len(psi_df))
 os.environ["GEMINI_API_KEY"] = GEMINI_API_KEY
 client = genai.Client()
 
-def build_context(dfs, max_chars=15000):
+# ===== Novo build_context otimizado =====
+def build_context(dfs, pergunta, max_chars=15000):
     parts = []
     for name, df in dfs.items():
         if df.empty:
             continue
+        # filtra linhas que contenham a pergunta em qualquer célula
+        mask = df.apply(lambda row: row.astype(str).str.contains(pergunta, case=False, na=False).any(), axis=1)
+        filtered = df[mask]
+        if filtered.empty:
+            continue
         parts.append(f"--- {name} ---")
-        for r in df.head(50).to_dict(orient="records"):  # só 50 linhas por aba
+        for r in filtered.to_dict(orient="records"):
             row_items = [f"{k}: {v}" for k,v in r.items() if v is not None and str(v).strip() != '']
             parts.append(" | ".join(row_items))
     context = "\n".join(parts)
@@ -230,7 +236,7 @@ with col_meio:
                     st.error("Não foi possível obter a cotação do dólar.")
                 else:
                     dfs = {"erros": erros_df, "trabalhos": trabalhos_df, "dacen": dacen_df, "psi": psi_df}
-                    context = build_context(dfs)
+                    context = build_context(dfs, pergunta)
                     prompt = f"""
 Você é um assistente técnico que responde em português.
 Baseie-se **apenas** nos dados abaixo (planilhas). 
