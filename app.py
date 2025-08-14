@@ -5,13 +5,23 @@ import gspread
 from google.oauth2.service_account import Credentials
 from google import genai
 from datetime import datetime
-from streamlit_autorefresh import st_autorefresh  # para atualização automática
 
 # ===== Configuração da página =====
 st.set_page_config(page_title="PlasPrint IA", page_icon="favicon.ico", layout="wide")
 
-# ===== Auto Refresh a cada 60 segundos =====
-st_autorefresh(interval=60 * 1000, key="datetime_refresh")
+# ===== Mostrar Data e Hora no canto superior direito =====
+def show_datetime():
+    agora = datetime.now().strftime("%d/%m/%Y %H:%M")
+    st.markdown(f"""
+    <div style='position:fixed; top:10px; right:25px;
+                font-family:sans-serif; font-size:120%;
+                font-weight:bold; color:white; z-index:100;'>
+        {agora}
+    </div>
+    """, unsafe_allow_html=True)
+
+show_datetime()
+st.experimental_rerun()  # a página se atualiza automaticamente (recarrega)  
 
 # ===== Funções auxiliares =====
 @st.cache_data(ttl=300)  # Cache por 5 minutos
@@ -132,23 +142,8 @@ div.stTextInput > div > input {{
     background-repeat: no-repeat;
     background-attachment: fixed;
 }}
-/* Data e hora no canto superior direito */
-.datetime-top {{
-    position: fixed;
-    top: 10px;
-    right: 25px;
-    font-family: 'CustomFont', sans-serif !important;
-    font-size: 120%;
-    font-weight: bold;
-    color: white;
-    z-index: 100;
-}}
 </style>
 """, unsafe_allow_html=True)
-
-# ===== Mostrar Data e Hora =====
-agora = datetime.now().strftime("%d/%m/%Y %H:%M")
-st.markdown(f'<div class="datetime-top">{agora}</div>', unsafe_allow_html=True)
 
 # ===== Carregar segredos =====
 try:
@@ -199,7 +194,7 @@ def build_context(dfs, max_chars=15000):
         if df.empty:
             continue
         parts.append(f"--- {name} ---")
-        for r in df.head(50).to_dict(orient="records"):  # só 50 linhas por aba
+        for r in df.head(50).to_dict(orient="records"):
             row_items = [f"{k}: {v}" for k,v in r.items() if v is not None and str(v).strip() != '']
             parts.append(" | ".join(row_items))
     context = "\n".join(parts)
