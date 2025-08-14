@@ -4,13 +4,13 @@ import json, base64, os, re, requests, io
 import gspread
 from google.oauth2.service_account import Credentials
 from google import genai
-from unidecode import unidecode  # 🔹 para busca mais tolerante
+import unicodedata  # 🔹 para remover acentos
 
 # ===== Configuração da página =====
 st.set_page_config(page_title="PlasPrint IA", page_icon="favicon.ico", layout="wide")
 
 # ===== Funções auxiliares =====
-@st.cache_data(ttl=300)  # Cache por 5 minutos
+@st.cache_data(ttl=300)
 def get_usd_brl_rate():
     try:
         res = requests.get("https://economia.awesomeapi.com.br/json/last/USD-BRL")
@@ -22,7 +22,6 @@ def get_usd_brl_rate():
 def format_dollar_values(text, rate):
     if "$" not in text or rate is None:
         return text
-
     money_regex = re.compile(r'\$\d{1,3}(?:[.,]\d{3})*(?:[.,]\d+)?')
 
     def parse_money_str(s):
@@ -70,7 +69,6 @@ def format_dollar_values(text, rate):
         return f"{orig} (R$ {brl})"
 
     formatted = money_regex.sub(repl, text)
-
     if not formatted.endswith("\n"):
         formatted += "\n"
     formatted += "(valores sem impostos)"
@@ -174,9 +172,17 @@ st.sidebar.write("psi:", len(psi_df))
 os.environ["GEMINI_API_KEY"] = GEMINI_API_KEY
 client = genai.Client()
 
-# ===== Busca tolerante a variações =====
+# ===== Funções para busca tolerante =====
+def normalize_text(text):
+    if not isinstance(text, str):
+        text = str(text)
+    text = text.lower()
+    text = unicodedata.normalize('NFD', text)
+    text = ''.join(c for c in text if unicodedata.category(c) != 'Mn')
+    return text
+
 def search_relevant_rows(dfs, query, max_per_sheet=50):
-    query_norm = unidecode(query.lower())
+    query_norm = normalize_text(query)
     query_terms = [t for t in query_norm.split() if len(t) > 2]
 
     results = {}
@@ -185,8 +191,9 @@ def search_relevant_rows(dfs, query, max_per_sheet=50):
             continue
 
         def row_match(row):
-            row_text = unidecode(" ".join(row.astype(str).tolist()).lower())
-            return any(term in row_text for term in query_terms)
+            row_text = " ".join(row.astype(str).tolist())
+            row_text_norm = normalize_text(row_text)
+            return any(term in row_text_norm for term in query_terms)
 
         mask = df.apply(row_match, axis=1)
         filtered = df[mask].head(max_per_sheet)
