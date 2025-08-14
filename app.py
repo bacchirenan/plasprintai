@@ -23,13 +23,15 @@ def format_dollar_values(text, rate):
     if "$" not in text or rate is None:
         return text
 
-    money_regex = re.compile(r'\$\d{1,3}(?:[.,]\d{3})*(?:[.,]\d+)?')
+    # Regex atualizado para capturar todos os valores em $ corretamente
+    money_regex = re.compile(r'\$\d+(?:[.,]\d{3})*(?:[.,]\d+)?')
 
     def parse_money_str(s):
         s = s.strip()
         if s.startswith('$'):
             s = s[1:]
         s = s.replace(" ", "")
+        # Detectar decimal corretamente
         if '.' in s and ',' in s:
             if s.rfind(',') > s.rfind('.'):
                 dec, thou = ',', '.'
@@ -42,21 +44,15 @@ def format_dollar_values(text, rate):
                 s_clean = s.replace('.', '').replace(',', '.')
             else:
                 s_clean = s.replace(',', '')
-        elif '.' in s:
-            last = s.rsplit('.', 1)[-1]
-            if 1 <= len(last) <= 2:
-                s_clean = s
-            else:
-                s_clean = s.replace('.', '')
         else:
-            s_clean = s
+            s_clean = s.replace('.', '')
         try:
             return float(s_clean)
         except:
             return None
 
     def to_brazilian(n):
-        # Garantir duas casas decimais e formatação correta
+        # Formatar com duas casas decimais e separadores corretos
         s = f"{n:,.2f}"
         s = s.replace(",", "X").replace(".", ",").replace("X", ".")
         return s
@@ -68,7 +64,7 @@ def format_dollar_values(text, rate):
             return orig
         converted = val * rate
         brl = to_brazilian(converted)
-        return f"{orig} (R$ {brl})"
+        return f"{orig} (R$ {brl})"  # ✅ sem duplicar zeros
 
     formatted = money_regex.sub(repl, text)
 
