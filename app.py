@@ -148,7 +148,13 @@ except Exception as e:
 def read_ws(name):
     try:
         ws = sh.worksheet(name)
-        return pd.DataFrame(ws.get_all_values())  # 🔹 lê todas as linhas, não só registros completos
+        values = ws.get_all_values()
+        if not values:
+            return pd.DataFrame()
+        # 🔹 garante que todas as linhas sejam mantidas, mesmo vazias
+        max_len = max(len(r) for r in values)
+        values = [r + [""] * (max_len - len(r)) for r in values]
+        return pd.DataFrame(values)
     except:
         return pd.DataFrame()
 
