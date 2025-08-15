@@ -151,10 +151,16 @@ def read_ws(name):
         values = ws.get_all_values()
         if not values:
             return pd.DataFrame()
-        # 🔹 garante que todas as linhas sejam mantidas, mesmo vazias
+        # 🔹 padroniza número de colunas em todas as linhas
         max_len = max(len(r) for r in values)
         values = [r + [""] * (max_len - len(r)) for r in values]
-        return pd.DataFrame(values)
+        # 🔹 usa a primeira linha como cabeçalho
+        header = values[0]
+        # se o header for menor que max_len, completa com nomes genéricos
+        if len(header) < max_len:
+            header = header + [f"col_{i}" for i in range(len(header), max_len)]
+        rows = values[1:]
+        return pd.DataFrame(rows, columns=header)
     except:
         return pd.DataFrame()
 
@@ -173,35 +179,17 @@ st.sidebar.write("psi:", len(psi_df))
 os.environ["GEMINI_API_KEY"] = GEMINI_API_KEY
 client = genai.Client()
 
-# ===== Funções para busca tolerante =====
-def normalize_text(text):
-    if not isinstance(text, str):
-        text = str(text)
-    text = text.lower()
-    text = unicodedata.normalize('NFD', text)
-    text = ''.join(c for c in text if unicodedata.category(c) != 'Mn')
-    return text
+# ===== Funções para busca =====
+# (sem filtro por palavra-chave — sempre envia até 200 linhas por aba)
 
-def search_relevant_rows(dfs, query, max_per_sheet=200):  # 🔹 agora pega até 200
-    query_norm = normalize_text(query)
-    query_terms = [t for t in query_norm.split() if len(t) > 2]
-
+def search_relevant_rows(dfs, max_per_sheet=200):
     results = {}
     for name, df in dfs.items():
         if df.empty:
             continue
-
-        def row_match(row):
-            row_text = " ".join(row.astype(str).tolist())
-            row_text_norm = normalize_text(row_text)
-            return any(term in row_text_norm for term in query_terms)
-
-        mask = df.apply(row_match, axis=1)
-        filtered = df[mask].head(max_per_sheet)
-        if not filtered.empty:
-            results[name] = filtered
-
+        results[name] = df.head(max_per_sheet)
     return results
+
 
 def build_context(dfs, max_chars=15000):
     parts = []
@@ -210,7 +198,7 @@ def build_context(dfs, max_chars=15000):
             continue
         parts.append(f"--- {name} ---")
         for r in df.to_dict(orient="records"):
-            row_items = [f"{k}: {v}" for k,v in r.items() if v not in [None, ""]]
+            row_items = [f"{k}: {v}" for k, v in r.items() if str(v).strip() not in ["", "None", "nan"]]
             parts.append(" | ".join(row_items))
     context = "\n".join(parts)
     if len(context) > max_chars:
@@ -238,7 +226,7 @@ def remove_drive_links(text):
     return re.sub(r'https?://drive\.google\.com/file/d/[a-zA-Z0-9_-]+/view\?usp=drive_link', '', text)
 
 # ===== Layout principal =====
-col_esq, col_meio, col_dir = st.columns([1,2,1])
+col_esq, col_meio, col_dir = st.columns([1, 2, 1])
 with col_meio:
     st.markdown("<h1 class='custom-font'>PlasPrint IA</h1><br>", unsafe_allow_html=True)
     st.markdown("<p class='custom-font'>Qual a sua dúvida?</p>", unsafe_allow_html=True)
@@ -260,7 +248,12 @@ with col_meio:
                     st.error("Não foi possível obter a cotação do dólar.")
                 else:
                     dfs = {"erros": erros_df, "trabalhos": trabalhos_df, "dacen": dacen_df, "psi": psi_df}
-                    filtered_dfs = search_relevant_rows(dfs, pergunta, max_per_sheet=200)  # 🔹 garante 200
+                    filtered_dfs = search_relevant_rows(dfs, max_per_sheet=200)  # 🔹 SEM FILTRO — sempre envia
+
+                    # 🔎 Debug/visibilidade do que foi enviado
+                    with st.sidebar.expander("Linhas enviadas ao Gemini", expanded=False):
+                        for name, df_env in filtered_dfs.items():
+                            st.write(f"{name}: {len(df_env)}")
 
                     if not filtered_dfs:
                         st.warning(f'Não encontrei nada relacionado a "{pergunta}" nas planilhas.')
@@ -284,23 +277,33 @@ Responda de forma clara, sem citar a aba ou linha da planilha.
                             resp = client.models.generate_content(model="gemini-2.5-flash", contents=prompt)
                             output_fmt = format_dollar_values(resp.text, rate)
                             output_fmt = remove_drive_links(output_fmt)
-                            st.markdown(f"<div style='text-align:center; margin-top:20px;'>{output_fmt.replace(chr(10),'<br/>')}</div>", unsafe_allow_html=True)
+                            st.markdown(
+                                f"<div style='text-align:center; margin-top:20px;'>{output_fmt.replace(chr(10),'<br/>')}</div>",
+                                unsafe_allow_html=True,
+                            )
                             show_drive_images_from_text(resp.text)
                         except Exception as e:
                             st.error(f"Erro ao chamar Gemini: {e}")
             st.session_state.botao_texto = "Buscar"
 
 # ===== Rodapé e logo =====
-st.markdown("""
+st.markdown(
+    """
 <style>
 .version-tag { position: fixed; bottom: 50px; right: 25px; font-size: 12px; color: white; opacity: 0.7; z-index: 100; }
 .logo-footer { position: fixed; bottom: 5px; left: 50%; transform: translateX(-50%); width: 120px; z-index: 100; }
 </style>
 <div class="version-tag">V1.0</div>
-""", unsafe_allow_html=True)
+""",
+    unsafe_allow_html=True,
+)
 
 def get_base64_img(path):
     with open(path, "rb") as f:
         return base64.b64encode(f.read()).decode()
+
 img_base64_logo = get_base64_img("logo.png")
-st.markdown(f'<img src="data:image/png;base64,{img_base64_logo}" class="logo-footer" />', unsafe_allow_html=True)
+st.markdown(
+    f'<img src="data:image/png;base64,{img_base64_logo}" class="logo-footer" />',
+    unsafe_allow_html=True,
+)
