@@ -23,7 +23,6 @@ def format_dollar_values(text, rate):
     if "$" not in text or rate is None:
         return text
 
-    # Regex atualizado para capturar todos os valores em $ corretamente
     money_regex = re.compile(r'\$\d+(?:[.,]\d{3})*(?:[.,]\d+)?')
 
     def parse_money_str(s):
@@ -31,7 +30,6 @@ def format_dollar_values(text, rate):
         if s.startswith('$'):
             s = s[1:]
         s = s.replace(" ", "")
-        # Detectar decimal corretamente
         if '.' in s and ',' in s:
             if s.rfind(',') > s.rfind('.'):
                 dec, thou = ',', '.'
@@ -52,7 +50,6 @@ def format_dollar_values(text, rate):
             return None
 
     def to_brazilian(n):
-        # Formatar com duas casas decimais e separadores corretos
         s = f"{n:,.2f}"
         s = s.replace(",", "X").replace(".", ",").replace("X", ".")
         return s
@@ -64,10 +61,9 @@ def format_dollar_values(text, rate):
             return orig
         converted = val * rate
         brl = to_brazilian(converted)
-        return f"{orig} (R$ {brl})"  # ✅ sem duplicar zeros
+        return f"{orig} (R$ {brl})"
 
     formatted = money_regex.sub(repl, text)
-
     if not formatted.endswith("\n"):
         formatted += "\n"
     formatted += "(valores sem impostos)"
@@ -152,7 +148,7 @@ except Exception as e:
 def read_ws(name):
     try:
         ws = sh.worksheet(name)
-        return pd.DataFrame(ws.get_all_records())
+        return pd.DataFrame(ws.get_all_values())  # 🔹 lê todas as linhas, não só registros completos
     except:
         return pd.DataFrame()
 
@@ -180,7 +176,7 @@ def normalize_text(text):
     text = ''.join(c for c in text if unicodedata.category(c) != 'Mn')
     return text
 
-def search_relevant_rows(dfs, query, max_per_sheet=50):
+def search_relevant_rows(dfs, query, max_per_sheet=200):  # 🔹 agora pega até 200
     query_norm = normalize_text(query)
     query_terms = [t for t in query_norm.split() if len(t) > 2]
 
@@ -258,7 +254,7 @@ with col_meio:
                     st.error("Não foi possível obter a cotação do dólar.")
                 else:
                     dfs = {"erros": erros_df, "trabalhos": trabalhos_df, "dacen": dacen_df, "psi": psi_df}
-                    filtered_dfs = search_relevant_rows(dfs, pergunta)
+                    filtered_dfs = search_relevant_rows(dfs, pergunta, max_per_sheet=200)  # 🔹 garante 200
 
                     if not filtered_dfs:
                         st.warning(f'Não encontrei nada relacionado a "{pergunta}" nas planilhas.')
