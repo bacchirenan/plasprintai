@@ -148,18 +148,33 @@ except Exception as e:
 def read_ws(name):
     try:
         ws = sh.worksheet(name)
-        # 🔹 agora sempre traz linhas vazias também
-        values = ws.get_all_values(return_empty=True)
+        values = ws.get_all_values()  # compatível com qualquer versão gspread
+
         if not values:
             return pd.DataFrame()
+
+        # 🔹 calcula a maior largura de coluna
         max_len = max(len(r) for r in values)
+
+        # 🔹 preenche cada linha com "" até max_len
         values = [r + [""] * (max_len - len(r)) for r in values]
+
+        # 🔹 força incluir linhas até o limite real da aba (row_count)
+        last_row = ws.row_count
+        if len(values) < last_row:
+            for _ in range(last_row - len(values)):
+                values.append([""] * max_len)
+
+        # 🔹 primeira linha é header
         header = values[0]
         if len(header) < max_len:
             header = header + [f"col_{i}" for i in range(len(header), max_len)]
+
         rows = values[1:]
         return pd.DataFrame(rows, columns=header)
-    except:
+
+    except Exception as e:
+        st.sidebar.error(f"Erro ao ler aba {name}: {e}")
         return pd.DataFrame()
 
 erros_df = read_ws("erros")
@@ -305,3 +320,4 @@ st.markdown(
     f'<img src="data:image/png;base64,{img_base64_logo}" class="logo-footer" />',
     unsafe_allow_html=True,
 )
+
