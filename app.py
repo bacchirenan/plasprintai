@@ -148,15 +148,13 @@ except Exception as e:
 def read_ws(name):
     try:
         ws = sh.worksheet(name)
-        values = ws.get_all_values()
+        # 🔹 agora sempre traz linhas vazias também
+        values = ws.get_all_values(return_empty=True)
         if not values:
             return pd.DataFrame()
-        # 🔹 padroniza número de colunas em todas as linhas
         max_len = max(len(r) for r in values)
         values = [r + [""] * (max_len - len(r)) for r in values]
-        # 🔹 usa a primeira linha como cabeçalho
         header = values[0]
-        # se o header for menor que max_len, completa com nomes genéricos
         if len(header) < max_len:
             header = header + [f"col_{i}" for i in range(len(header), max_len)]
         rows = values[1:]
@@ -175,13 +173,15 @@ st.sidebar.write("trabalhos:", len(trabalhos_df))
 st.sidebar.write("dacen:", len(dacen_df))
 st.sidebar.write("psi:", len(psi_df))
 
+# Debug opcional
+with st.sidebar.expander("Prévia da aba erros"):
+    st.write(erros_df.tail(10))
+
 # ===== Cliente Gemini =====
 os.environ["GEMINI_API_KEY"] = GEMINI_API_KEY
 client = genai.Client()
 
 # ===== Funções para busca =====
-# (sem filtro por palavra-chave — sempre envia até 200 linhas por aba)
-
 def search_relevant_rows(dfs, max_per_sheet=200):
     results = {}
     for name, df in dfs.items():
@@ -189,7 +189,6 @@ def search_relevant_rows(dfs, max_per_sheet=200):
             continue
         results[name] = df.head(max_per_sheet)
     return results
-
 
 def build_context(dfs, max_chars=15000):
     parts = []
@@ -248,9 +247,8 @@ with col_meio:
                     st.error("Não foi possível obter a cotação do dólar.")
                 else:
                     dfs = {"erros": erros_df, "trabalhos": trabalhos_df, "dacen": dacen_df, "psi": psi_df}
-                    filtered_dfs = search_relevant_rows(dfs, max_per_sheet=200)  # 🔹 SEM FILTRO — sempre envia
+                    filtered_dfs = search_relevant_rows(dfs, max_per_sheet=200)
 
-                    # 🔎 Debug/visibilidade do que foi enviado
                     with st.sidebar.expander("Linhas enviadas ao Gemini", expanded=False):
                         for name, df_env in filtered_dfs.items():
                             st.write(f"{name}: {len(df_env)}")
