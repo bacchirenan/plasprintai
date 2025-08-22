@@ -26,16 +26,14 @@ def format_dollar_values(text, rate):
     money_regex = re.compile(r'\$\d+(?:[.,]\d{3})*(?:[.,]\d+)?')
 
     def parse_money_str(s):
-        s = s.strip()
+        s = s.strip().replace(" ", "")
         if s.startswith('$'):
             s = s[1:]
-        s = s.replace(" ", "")
         if '.' in s and ',' in s:
             if s.rfind(',') > s.rfind('.'):
-                dec, thou = ',', '.'
+                s_clean = s.replace('.', '').replace(',', '.')
             else:
-                dec, thou = '.', ','
-            s_clean = s.replace(thou, '').replace(dec, '.')
+                s_clean = s.replace(',', '')
         elif ',' in s:
             last = s.rsplit(',', 1)[-1]
             if 1 <= len(last) <= 2:
@@ -51,8 +49,7 @@ def format_dollar_values(text, rate):
 
     def to_brazilian(n):
         s = f"{n:,.2f}"
-        s = s.replace(",", "X").replace(".", ",").replace("X", ".")
-        return s
+        return s.replace(",", "X").replace(".", ",").replace("X", ".")
 
     def repl(m):
         orig = m.group(0)
@@ -148,30 +145,25 @@ except Exception as e:
 def read_ws(name):
     try:
         ws = sh.worksheet(name)
-        values = ws.get_all_values()  # compatível com qualquer versão gspread
+        values = ws.get_all_values()
 
         if not values:
             return pd.DataFrame()
 
-        # 🔹 calcula a maior largura de coluna
         max_len = max(len(r) for r in values)
-
-        # 🔹 preenche cada linha com "" até max_len
         values = [r + [""] * (max_len - len(r)) for r in values]
 
-        # 🔹 força incluir linhas até o limite real da aba (row_count)
-        last_row = ws.row_count
-        if len(values) < last_row:
-            for _ in range(last_row - len(values)):
-                values.append([""] * max_len)
-
-        # 🔹 primeira linha é header
         header = values[0]
         if len(header) < max_len:
-            header = header + [f"col_{i}" for i in range(len(header), max_len)]
+            header += [f"col_{i}" for i in range(len(header), max_len)]
 
         rows = values[1:]
-        return pd.DataFrame(rows, columns=header)
+        df = pd.DataFrame(rows, columns=header)
+
+        # Remove linhas completamente vazias
+        df = df[~df.apply(lambda row: all(cell.strip() == "" for cell in row), axis=1)]
+
+        return df
 
     except Exception as e:
         st.sidebar.error(f"Erro ao ler aba {name}: {e}")
@@ -188,7 +180,6 @@ st.sidebar.write("trabalhos:", len(trabalhos_df))
 st.sidebar.write("dacen:", len(dacen_df))
 st.sidebar.write("psi:", len(psi_df))
 
-# Debug opcional
 with st.sidebar.expander("Prévia da aba erros"):
     st.write(erros_df.tail(10))
 
@@ -320,4 +311,3 @@ st.markdown(
     f'<img src="data:image/png;base64,{img_base64_logo}" class="logo-footer" />',
     unsafe_allow_html=True,
 )
-
