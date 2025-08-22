@@ -174,11 +174,17 @@ trabalhos_df = read_ws("trabalhos")
 dacen_df = read_ws("dacen")
 psi_df = read_ws("psi")
 
+# ===== Sidebar =====
 st.sidebar.header("Dados carregados")
 st.sidebar.write("erros:", len(erros_df))
 st.sidebar.write("trabalhos:", len(trabalhos_df))
 st.sidebar.write("dacen:", len(dacen_df))
 st.sidebar.write("psi:", len(psi_df))
+
+# 🔄 Botão para atualizar planilhas manualmente
+if st.sidebar.button("🔄 Atualizar planilhas"):
+    st.cache_data.clear()
+    st.rerun()
 
 with st.sidebar.expander("Prévia da aba erros"):
     st.write(erros_df.tail(10))
