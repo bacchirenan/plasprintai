@@ -48,8 +48,7 @@ def format_dollar_values(text, rate):
             return None
 
     def to_brazilian(n):
-        s = f"{n:,.2f}"
-        return s.replace(",", "X").replace(".", ",").replace("X", ".")
+        return f"{n:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
     def repl(m):
         orig = m.group(0)
@@ -61,9 +60,8 @@ def format_dollar_values(text, rate):
         return f"{orig} (R$ {brl})"
 
     formatted = money_regex.sub(repl, text)
-    if not formatted.endswith("\n"):
-        formatted += "\n"
-    formatted += "(valores sem impostos)"
+    formatted = formatted.strip()
+    formatted += "\n(valores sem impostos)"
     return formatted
 
 def inject_favicon():
@@ -160,7 +158,6 @@ def read_ws(name):
         rows = values[1:]
         df = pd.DataFrame(rows, columns=header)
 
-        # Remove linhas completamente vazias
         df = df[~df.apply(lambda row: all(cell.strip() == "" for cell in row), axis=1)]
 
         return df
@@ -181,7 +178,6 @@ st.sidebar.write("trabalhos:", len(trabalhos_df))
 st.sidebar.write("dacen:", len(dacen_df))
 st.sidebar.write("psi:", len(psi_df))
 
-# 🔄 Botão para atualizar planilhas manualmente
 if st.sidebar.button("🔄 Atualizar planilhas"):
     st.cache_data.clear()
     st.rerun()
@@ -216,7 +212,6 @@ def build_context(dfs, max_chars=15000):
         context = context[:max_chars] + "\n...[CONTEXTO TRUNCADO]"
     return context
 
-# ===== Cache de imagens do Drive =====
 @st.cache_data
 def load_drive_image(file_id):
     url = f"https://drive.google.com/uc?export=view&id={file_id}"
