@@ -23,31 +23,21 @@ def format_dollar_values(text, rate):
     if "$" not in text or rate is None:
         return text
 
-    money_regex = re.compile(r'\$\d+(?:[.,]\d{3})*(?:[.,]\d+)?')
+    # Regex captura números decimais com ponto ou vírgula
+    money_regex = re.compile(r'\$\d+[\.,]?\d*')
 
     def parse_money_str(s):
         s = s.strip().replace(" ", "")
         if s.startswith('$'):
             s = s[1:]
-        if '.' in s and ',' in s:
-            if s.rfind(',') > s.rfind('.'):
-                s_clean = s.replace('.', '').replace(',', '.')
-            else:
-                s_clean = s.replace(',', '')
-        elif ',' in s:
-            last = s.rsplit(',', 1)[-1]
-            if 1 <= len(last) <= 2:
-                s_clean = s.replace('.', '').replace(',', '.')
-            else:
-                s_clean = s.replace(',', '')
-        else:
-            s_clean = s.replace('.', '')
+        s = s.replace(",", ".")
         try:
-            return float(s_clean)
+            return float(s)
         except:
             return None
 
     def to_brazilian(n):
+        # Converte para string brasileira: ponto milhar, vírgula decimal
         return f"{n:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
     def repl(m):
