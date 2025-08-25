@@ -19,27 +19,44 @@ def get_usd_brl_rate():
     except:
         return None
 
-def format_dollar_values(text, rate, quantity=1):
+def format_dollar_values(text, rate, quantidade=1):
     """
-    Converte valores em dólar no texto para reais corretamente, multiplicando
-    pelo número de unidades (quantity) e aplicando o câmbio.
+    Converte valores em dólar dentro do texto para reais, multiplicando pelo câmbio e pela quantidade.
+    Mantém o valor original em dólar no texto.
     """
     if "$" not in text or rate is None:
         return text
 
-    money_regex = re.compile(r'\$(\d*\.\d+|\d+)')
+    # Regex que captura valores em dólar incluindo decimais
+    money_regex = re.compile(r'\$\d*\.?\d+')
+
+    def parse_money_str(s):
+        """Extrai o número do formato $0.008 ou $12.34"""
+        s = s.strip().replace(" ", "")
+        if s.startswith('$'):
+            s = s[1:]
+        try:
+            return float(s)
+        except:
+            return None
+
+    def to_brazilian(n):
+        """Formata número como moeda brasileira"""
+        return f"{n:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
     def repl(m):
-        orig = m.group(0)  # ex: $0.008
-        val = float(m.group(1))  # captura o valor numérico
-        val_total = val * quantity  # multiplica pela quantidade de garrafas
-        val_brl = val_total * rate  # converte para real
-        # Formata os valores
-        val_usd_str = f"{val_total:.3f}" if val_total < 1 else f"{val_total:.2f}"
-        val_brl_str = f"{val_brl:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-        return f"${val_usd_str} (R$ {val_brl_str})"
+        orig = m.group(0)
+        val = parse_money_str(orig)
+        if val is None:
+            return orig
+        # Multiplica pelo número de unidades
+        val_total = val * quantidade
+        converted = val_total * rate
+        brl = to_brazilian(converted)
+        return f"{orig} (R$ {brl})"
 
     formatted = money_regex.sub(repl, text)
+    formatted = formatted.strip()
     formatted += "\n(valores sem impostos)"
     return formatted
 
@@ -259,10 +276,10 @@ Pergunta:
 Responda de forma clara, sem citar a aba ou linha da planilha.
 """
                         try:
+                            # Aqui você pode definir a quantidade de garrafas
+                            quantidade_garrafas = 10  # exemplo
                             resp = client.models.generate_content(model="gemini-2.5-flash", contents=prompt)
-                            # Aqui informamos a quantidade de garrafas (ex: 10)
-                            quantity = 10  # Ajuste dinamicamente se quiser pelo input do usuário
-                            output_fmt = format_dollar_values(resp.text, rate, quantity)
+                            output_fmt = format_dollar_values(resp.text, rate, quantidade=quantidade_garrafas)
                             output_fmt = remove_drive_links(output_fmt)
                             st.markdown(
                                 f"<div style='text-align:center; margin-top:20px;'>{output_fmt.replace(chr(10),'<br/>')}</div>",
