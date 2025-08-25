@@ -19,15 +19,14 @@ def get_usd_brl_rate():
     except:
         return None
 
-def format_dollar_values(text, rate, quantity=1):
+def format_dollar_values_detailed(text, rate, quantity=1):
     """
-    Corrige a conversão de dólar para real, multiplicando pelo número de garrafas
-    e exibindo o valor corretamente.
+    Corrige valores em dólar para real, incluindo detalhamento por cor
+    e multiplicando corretamente pelo número de garrafas.
     """
     if "$" not in text or rate is None:
         return text
 
-    # Regex para capturar valores em dólar com casas decimais
     money_regex = re.compile(r'\$\d+(?:\.\d+)?')
 
     def parse_money_str(s):
@@ -40,7 +39,6 @@ def format_dollar_values(text, rate, quantity=1):
             return None
 
     def to_brazilian(n):
-        # Formata número com 2 casas decimais e vírgula
         return f"{n:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
     def repl(m):
@@ -138,24 +136,17 @@ def read_ws(name):
     try:
         ws = sh.worksheet(name)
         values = ws.get_all_values()
-
         if not values:
             return pd.DataFrame()
-
         max_len = max(len(r) for r in values)
         values = [r + [""] * (max_len - len(r)) for r in values]
-
         header = values[0]
         if len(header) < max_len:
             header += [f"col_{i}" for i in range(len(header), max_len)]
-
         rows = values[1:]
         df = pd.DataFrame(rows, columns=header)
-
         df = df[~df.apply(lambda row: all(cell.strip() == "" for cell in row), axis=1)]
-
         return df
-
     except Exception as e:
         st.sidebar.error(f"Erro ao ler aba {name}: {e}")
         return pd.DataFrame()
@@ -248,9 +239,6 @@ with col_meio:
                 if rate is None:
                     st.error("Não foi possível obter a cotação do dólar.")
                 else:
-                    # Aqui você pode informar a quantidade de garrafas, exemplo 10
-                    quantidade_garrafas = 10
-
                     dfs = {"erros": erros_df, "trabalhos": trabalhos_df, "dacen": dacen_df, "psi": psi_df}
                     filtered_dfs = search_relevant_rows(dfs, max_per_sheet=200)
 
@@ -278,7 +266,8 @@ Responda de forma clara, sem citar a aba ou linha da planilha.
 """
                         try:
                             resp = client.models.generate_content(model="gemini-2.5-flash", contents=prompt)
-                            output_fmt = format_dollar_values(resp.text, rate, quantity=quantidade_garrafas)
+                            quantidade_garrafas = 10  # Ajuste aqui conforme a quantidade
+                            output_fmt = format_dollar_values_detailed(resp.text, rate, quantidade_garrafas)
                             output_fmt = remove_drive_links(output_fmt)
                             st.markdown(
                                 f"<div style='text-align:center; margin-top:20px;'>{output_fmt.replace(chr(10),'<br/>')}</div>",
