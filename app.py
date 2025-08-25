@@ -25,7 +25,10 @@ def load_drive_image(file_id):
     return res.content
 
 def format_dollar_values(text, rate):
-    """Converte valores em dólar para reais corretamente, sem multiplicar pelo número de unidades."""
+    """
+    Converte corretamente valores em dólar para reais.
+    NÃO remove pontos; apenas troca vírgula por ponto.
+    """
     if "$" not in text or rate is None:
         return text
     money_regex = re.compile(r'\$\d+(?:[.,]\d+)?')
@@ -34,7 +37,7 @@ def format_dollar_values(text, rate):
         s = s.strip().replace(" ", "")
         if s.startswith("$"):
             s = s[1:]
-        s = s.replace(",", ".")  # 🔹 só trocar vírgula por ponto
+        s = s.replace(",", ".")  # apenas trocar vírgula por ponto
         return float(s)
     
     def to_brazilian(n):
@@ -44,7 +47,7 @@ def format_dollar_values(text, rate):
         orig = m.group(0)
         try:
             val = parse_money_str(orig)
-            converted = val * rate  # apenas converte dólar → real
+            converted = val * rate  # apenas conversão dólar → real
             return f"{orig} (R$ {to_brazilian(converted)})"
         except:
             return orig
@@ -70,7 +73,7 @@ erros_df = read_ws("erros")
 trabalhos_df = read_ws("trabalhos")
 dacen_df = read_ws("dacen")
 psi_df = read_ws("psi")
-gerais_df = read_ws("gerais")  # 🔹 aba gerais
+gerais_df = read_ws("gerais")  # aba gerais
 
 dfs = {
     "erros": erros_df,
@@ -139,7 +142,7 @@ Dados disponíveis:
     try:
         resp = client.models.generate_content(model="gemini-2.5-flash", contents=prompt)
         output = resp.text if resp else "Sem resposta"
-        output = format_dollar_values(output, usd_rate)
+        output = format_dollar_values(output, usd_rate)  # agora a conversão está correta
         st.write(output)
     except Exception as e:
         st.error(f"Erro ao chamar Gemini: {e}")
