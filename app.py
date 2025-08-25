@@ -29,27 +29,15 @@ def format_dollar_values(text, rate):
         s = s.strip().replace(" ", "")
         if s.startswith('$'):
             s = s[1:]
-        if '.' in s and ',' in s:
-            if s.rfind(',') > s.rfind('.'):
-                s_clean = s.replace('.', '').replace(',', '.')
-            else:
-                s_clean = s.replace(',', '')
-        elif ',' in s:
-            last = s.rsplit(',', 1)[-1]
-            if 1 <= len(last) <= 2:
-                s_clean = s.replace('.', '').replace(',', '.')
-            else:
-                s_clean = s.replace(',', '')
-        else:
-            s_clean = s.replace('.', '')
+        # Normaliza separadores
+        s = s.replace(".", "").replace(",", ".")
         try:
-            return float(s_clean)
+            return float(s)
         except:
             return None
 
     def to_brazilian(n):
-        s = f"{n:,.2f}"
-        return s.replace(",", "X").replace(".", ",").replace("X", ".")
+        return f"{n:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
     def repl(m):
         orig = m.group(0)
@@ -173,6 +161,7 @@ erros_df = read_ws("erros")
 trabalhos_df = read_ws("trabalhos")
 dacen_df = read_ws("dacen")
 psi_df = read_ws("psi")
+informacoes_df = read_ws("informações gerais")  # 🔹 nova aba
 
 # ===== Sidebar =====
 st.sidebar.header("Dados carregados")
@@ -180,6 +169,7 @@ st.sidebar.write("erros:", len(erros_df))
 st.sidebar.write("trabalhos:", len(trabalhos_df))
 st.sidebar.write("dacen:", len(dacen_df))
 st.sidebar.write("psi:", len(psi_df))
+st.sidebar.write("informações gerais:", len(informacoes_df))  # 🔹 mostra quantidade
 
 # 🔄 Botão para atualizar planilhas manualmente
 if st.sidebar.button("🔄 Atualizar planilhas"):
@@ -258,7 +248,13 @@ with col_meio:
                 if rate is None:
                     st.error("Não foi possível obter a cotação do dólar.")
                 else:
-                    dfs = {"erros": erros_df, "trabalhos": trabalhos_df, "dacen": dacen_df, "psi": psi_df}
+                    dfs = {
+                        "erros": erros_df,
+                        "trabalhos": trabalhos_df,
+                        "dacen": dacen_df,
+                        "psi": psi_df,
+                        "informações gerais": informacoes_df,  # 🔹 incluído no contexto
+                    }
                     filtered_dfs = search_relevant_rows(dfs, max_per_sheet=200)
 
                     with st.sidebar.expander("Linhas enviadas ao Gemini", expanded=False):
