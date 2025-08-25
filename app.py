@@ -23,19 +23,15 @@ def format_dollar_values(text, rate):
     if "$" not in text or rate is None:
         return text
 
-    # Regex que captura números decimais após o $
-    money_regex = re.compile(r'\$\s*(\d+[\.,]?\d*)')
+    # Regex para capturar valores em dólar (pequenos ou grandes)
+    money_regex = re.compile(r'\$(\d*\.?\d+)')
 
     def repl(m):
-        orig = m.group(0)
-        num_str = m.group(1).replace(",", ".")  # garante ponto decimal
-        try:
-            val = float(num_str)                 # converte corretamente para float
-            converted = val * rate               # multiplicação correta
-            brl = f"{converted:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-            return f"${val:.5f} (R$ {brl})"     # mostra 5 casas decimais para precisão
-        except:
-            return orig
+        val_usd = float(m.group(1))            # captura o valor exato
+        val_brl = val_usd * rate               # converte corretamente
+        val_usd_fmt = f"${val_usd:.5f}"       # formata dólar com 5 casas decimais
+        val_brl_fmt = f"R$ {val_brl:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+        return f"{val_usd_fmt} ({val_brl_fmt})" # concatena de forma correta, sem lixo
 
     formatted = money_regex.sub(repl, text)
     formatted += "\n(valores sem impostos)"
@@ -290,6 +286,7 @@ st.markdown(
     f'<img src="data:image/png;base64,{img_base64_logo}" class="logo-footer" />',
     unsafe_allow_html=True,
 )
+
 
 
 
