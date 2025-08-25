@@ -1,4 +1,4 @@
-import streamlit as st
+import streamlit as st 
 import pandas as pd
 import json, base64, re, requests, io
 import gspread
@@ -28,14 +28,17 @@ def format_dollar_values(text, rate):
     if "$" not in text or rate is None:
         return text
     money_regex = re.compile(r'\$\d+(?:[.,]\d+)?')
+    
     def parse_money_str(s):
         s = s.strip().replace(" ", "")
         if s.startswith("$"):
             s = s[1:]
-        s = s.replace(".", "").replace(",", ".")
+        s = s.replace(",", ".")  # 🔹 Corrigido: só trocar vírgula por ponto
         return float(s)
+    
     def to_brazilian(n):
         return f"{n:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+    
     def repl(m):
         orig = m.group(0)
         try:
@@ -44,6 +47,7 @@ def format_dollar_values(text, rate):
             return f"{orig} (R$ {to_brazilian(converted)})"
         except:
             return orig
+    
     formatted = money_regex.sub(repl, text)
     if not formatted.endswith("\n"):
         formatted += "\n"
