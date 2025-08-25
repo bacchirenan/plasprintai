@@ -23,15 +23,15 @@ def format_dollar_values(text, rate):
     if "$" not in text or rate is None:
         return text
 
-    # Regex para capturar valores em dólar (pequenos ou grandes)
+    # Regex para capturar valores em dólar
     money_regex = re.compile(r'\$(\d*\.?\d+)')
 
     def repl(m):
         val_usd = float(m.group(1))            # captura o valor exato
         val_brl = val_usd * rate               # converte corretamente
-        val_usd_fmt = f"${val_usd:.5f}"       # formata dólar com 5 casas decimais
+        val_usd_fmt = f"${val_usd:.5f}"       # formata dólar
         val_brl_fmt = f"R$ {val_brl:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-        return f"{val_usd_fmt} ({val_brl_fmt})" # concatena de forma correta, sem lixo
+        return f"{val_usd_fmt} ({val_brl_fmt})"
 
     formatted = money_regex.sub(repl, text)
     formatted += "\n(valores sem impostos)"
@@ -286,6 +286,7 @@ st.markdown(
     f'<img src="data:image/png;base64,{img_base64_logo}" class="logo-footer" />',
     unsafe_allow_html=True,
 )
+
 
 
 
