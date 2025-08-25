@@ -19,6 +19,7 @@ def get_usd_brl_rate():
     except:
         return None
 
+# ===== Função corrigida de conversão =====
 def format_dollar_values(text, rate):
     if "$" not in text or rate is None:
         return text
@@ -41,11 +42,12 @@ def format_dollar_values(text, rate):
         if val is None:
             return orig
         converted = val * rate
-        # Formata dólar com 5 casas decimais se <0.01, caso contrário 2 casas
-        usd_fmt = f"${val:.5f}" if val < 0.01 else f"${val:.2f}"
-        # Formata real com 4 casas decimais se <1, caso contrário 2 casas
-        brl_fmt = f"{converted:.4f}" if converted < 1 else f"{converted:,.2f}"
-        brl_fmt = brl_fmt.replace(',', 'X').replace('.', ',').replace('X', '.')
+        usd_fmt = f"${val:.5f}"  # dólar com 5 casas decimais
+        brl_fmt = f"{converted:.4f}"  # real com 4 casas decimais
+        if float(brl_fmt) >= 1:
+            brl_fmt = f"{float(brl_fmt):,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
+        else:
+            brl_fmt = brl_fmt.replace('.', ',')
         return f"{usd_fmt} (R$ {brl_fmt})"
 
     formatted = money_regex.sub(repl, text)
@@ -145,10 +147,7 @@ def read_ws(name):
 
         rows = values[1:]
         df = pd.DataFrame(rows, columns=header)
-
-        # Remove linhas completamente vazias
         df = df[~df.apply(lambda row: all(cell.strip() == "" for cell in row), axis=1)]
-
         return df
 
     except Exception as e:
@@ -167,7 +166,6 @@ st.sidebar.write("trabalhos:", len(trabalhos_df))
 st.sidebar.write("dacen:", len(dacen_df))
 st.sidebar.write("psi:", len(psi_df))
 
-# 🔄 Botão para atualizar planilhas manualmente
 if st.sidebar.button("🔄 Atualizar planilhas"):
     st.cache_data.clear()
     st.rerun()
@@ -275,15 +273,4 @@ Responda de forma clara, sem citar a aba ou linha da planilha.
                             output_fmt = remove_drive_links(output_fmt)
                             st.markdown(
                                 f"<div style='text-align:center; margin-top:20px;'>{output_fmt.replace(chr(10),'<br/>')}</div>",
-                                unsafe_allow_html=True,
-                            )
-                            show_drive_images_from_text(resp.text)
-                        except Exception as e:
-                            st.error(f"Erro ao chamar Gemini: {e}")
-            st.session_state.botao_texto = "Buscar"
-
-# ===== Rodapé e logo =====
-st.markdown(
-    """
-<style>
-.version-tag { position: fixed; bottom: 50px; right: 25px; font-size: 12px; color: white; opacity
+                                unsafe_allow
