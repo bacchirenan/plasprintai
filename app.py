@@ -20,20 +20,16 @@ def get_usd_brl_rate():
         return None
 
 def format_dollar_values(text, rate):
-    """
-    Corrige a conversão de valores em dólar para real.
-    Ex.: $0.008 -> R$ 0,04 se USD-BRL = 5.4
-    """
     if "$" not in text or rate is None:
         return text
 
-    money_regex = re.compile(r'\$\d+(?:[.,]\d{0,3})*(?:[.,]\d+)?')
+    # Regex para capturar valores em dólar, incluindo decimais longos
+    money_regex = re.compile(r'\$\d+(?:\.\d+)?')
 
     def parse_money_str(s):
         s = s.strip().replace(" ", "")
         if s.startswith('$'):
             s = s[1:]
-        s = s.replace(",", ".")
         try:
             return float(s)
         except:
@@ -149,9 +145,7 @@ def read_ws(name):
 
         rows = values[1:]
         df = pd.DataFrame(rows, columns=header)
-
         df = df[~df.apply(lambda row: all(cell.strip() == "" for cell in row), axis=1)]
-
         return df
 
     except Exception as e:
@@ -204,7 +198,6 @@ def build_context(dfs, max_chars=15000):
         context = context[:max_chars] + "\n...[CONTEXTO TRUNCADO]"
     return context
 
-# ===== Cache de imagens do Drive =====
 @st.cache_data
 def load_drive_image(file_id):
     url = f"https://drive.google.com/uc?export=view&id={file_id}"
@@ -273,6 +266,7 @@ Responda de forma clara, sem citar a aba ou linha da planilha.
 """
                         try:
                             resp = client.models.generate_content(model="gemini-2.5-flash", contents=prompt)
+                            # 🔹 Formatação de valores em dólar para real corrigida
                             output_fmt = format_dollar_values(resp.text, rate)
                             output_fmt = remove_drive_links(output_fmt)
                             st.markdown(
@@ -293,15 +287,4 @@ st.markdown(
 </style>
 <div class="version-tag">V1.0</div>
 """,
-    unsafe_allow_html=True,
-)
-
-def get_base64_img(path):
-    with open(path, "rb") as f:
-        return base64.b64encode(f.read()).decode()
-
-img_base64_logo = get_base64_img("logo.png")
-st.markdown(
-    f'<img src="data:image/png;base64,{img_base64_logo}" class="logo-footer" />',
-    unsafe_allow_html=True,
-)
+    unsafe
