@@ -23,29 +23,18 @@ def format_dollar_values(text, rate):
     if "$" not in text or rate is None:
         return text
 
-    # Regex que captura valores em dólar incluindo decimais longos
-    money_regex = re.compile(r'\$\d*\.\d+|\$\d+')
-
-    def parse_money_str(s):
-        s = s.strip().replace(" ", "")
-        if s.startswith('$'):
-            s = s[1:]
-        try:
-            return float(s)
-        except:
-            return None
-
-    def to_brazilian(n):
-        return f"{n:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+    # Captura apenas valores em dólar do tipo $0.008, $12.34 etc.
+    money_regex = re.compile(r'\$\d+(?:\.\d+)?')
 
     def repl(m):
         orig = m.group(0)
-        val = parse_money_str(orig)
-        if val is None:
+        try:
+            val = float(orig.replace("$", ""))
+            converted = val * rate
+            brl = f"{converted:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+            return f"{orig} (R$ {brl})"
+        except:
             return orig
-        converted = val * rate
-        brl = to_brazilian(converted)
-        return f"{orig} (R$ {brl})"
 
     formatted = money_regex.sub(repl, text)
     formatted = formatted.strip()
@@ -301,3 +290,4 @@ st.markdown(
     f'<img src="data:image/png;base64,{img_base64_logo}" class="logo-footer" />',
     unsafe_allow_html=True,
 )
+
