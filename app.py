@@ -33,7 +33,7 @@ def format_dollar_values(text, rate):
         s = s.strip().replace(" ", "")
         if s.startswith("$"):
             s = s[1:]
-        s = s.replace(",", ".")  # 🔹 Corrigido: só trocar vírgula por ponto
+        s = s.replace(",", ".")  # 🔹 Corrigido: apenas trocar vírgula por ponto
         return float(s)
     
     def to_brazilian(n):
@@ -114,16 +114,19 @@ query = st.text_area("Digite sua pergunta:")
 if st.button("Consultar") and query:
     # Monta o contexto para o Gemini
     context = ""
+    
+    # Outras abas como CSV
     for name, df in dfs.items():
-        if not df.empty:
+        if name != "gerais" and not df.empty:
             context += f"\n===== {name.upper()} =====\n"
-            if name == "gerais":
-                # Cada linha da aba gerais como texto separado
-                for idx, row in df.iterrows():
-                    info_text = row.get("Informações", "")
-                    context += f"- {info_text}\n"
-            else:
-                context += df.to_csv(index=False)
+            context += df.to_csv(index=False)
+    
+    # Aba gerais como lista de informações
+    if not gerais_df.empty:
+        context += "\n===== INFORMAÇÕES GERAIS =====\n"
+        for idx, row in gerais_df.iterrows():
+            info_text = row.get("Informações", "")
+            context += f"- {info_text}\n"
 
     prompt = f"""
 Você é um assistente que responde baseado **apenas** nos dados abaixo.
