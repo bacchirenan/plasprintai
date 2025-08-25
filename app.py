@@ -15,36 +15,59 @@ def get_usd_brl_rate():
     try:
         res = requests.get("https://economia.awesomeapi.com.br/json/last/USD-BRL")
         data = res.json()
+        # Usa "ask" como você tinha antes
         return float(data["USDBRL"]["ask"])
     except:
         return None
 
-# ===== Função corrigida de conversão dólar -> real =====
 def format_dollar_values(text, rate):
+    """
+    Função robusta para encontrar valores em dólares no texto, converter para reais
+    e formatar:
+      - USD: se < 0.01 => 3 casas decimais, senão 2 casas
+      - BRL: se < 1 => 4 casas decimais, senão 2 casas
+    Também evita deixar dígitos "sobrando" ao redor dos matches.
+    """
     if "$" not in text or rate is None:
         return text
 
-    money_regex = re.compile(r'\$\d+(?:\.\d{1,6})?')
+    # Captura $ seguido de dígitos e possíveis separadores (pontos ou vírgulas) 
+    # em sequência (por ex.: $0.00865, $1.234,56, $2.5)
+    money_regex = re.compile(r'\$[0-9]+(?:[.,][0-9]+)*')
 
     def parse_money_str(s):
+        # remove espaços e $ inicial
         s = s.strip().replace(" ", "")
         if s.startswith('$'):
             s = s[1:]
+        # normaliza vírgula para ponto (decimal)
+        s = s.replace(',', '.')
+        # se houver múltiplos pontos, considerar o último como separador decimal
+        if '.' in s:
+            last = s.rfind('.')
+            integer_part = s[:last].replace('.', '')  # remove pontos milhar
+            frac_part = s[last+1:].replace('.', '')  # remove pontos extras por segurança
+            s_clean = integer_part + ('.' + frac_part if frac_part != '' else '')
+        else:
+            s_clean = s.replace('.', '')
         try:
-            return float(s)
+            return float(s_clean)
         except:
             return None
 
     def format_usd(n):
+        # USD: pequenos valores com 3 casas, senão 2 casas
         if n < 0.01:
-            return f"${n:.3f}"   # até 3 casas para valores muito pequenos
+            return f"${n:.3f}"
         return f"${n:.2f}"
 
     def format_brl(n):
+        # BRL: <1 -> 4 casas; >=1 -> 2 casas; formatando para padrão brasileiro
         if n < 1:
-            s = f"{n:,.4f}"     # 4 casas para valores menores que 1 real
+            s = f"{n:,.4f}"
         else:
             s = f"{n:,.2f}"
+        # troca para formato BR: milhar = '.', decimal = ','
         return s.replace(",", "X").replace(".", ",").replace("X", ".")
 
     def repl(m):
@@ -56,38 +79,6 @@ def format_dollar_values(text, rate):
         usd_fmt = format_usd(val)
         brl_fmt = format_brl(converted)
         return f"{usd_fmt} (R$ {brl_fmt})"
-
-    formatted = money_regex.sub(repl, text)
-    if not formatted.endswith("\n"):
-        formatted += "\n"
-    formatted += "(valores sem impostos)"
-    return formatted
-
-
-    # Regex captura valores em dólar, inclusive decimais pequenos
-    money_regex = re.compile(r'\$\d*\.\d+|\$\d+')
-
-    def parse_money_str(s):
-        s = s.strip().replace(" ", "")
-        if s.startswith("$"):
-            s = s[1:]
-        try:
-            return float(s)
-        except:
-            return None
-
-    def to_brazilian(n):
-        # Formato brasileiro: ponto milhar, vírgula decimal
-        return f"{n:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-
-    def repl(m):
-        orig = m.group(0)
-        val = parse_money_str(orig)
-        if val is None:
-            return orig
-        converted = val * rate
-        brl = to_brazilian(converted)
-        return f"{orig} (R$ {brl})"
 
     formatted = money_regex.sub(repl, text)
     formatted = formatted.strip()
@@ -187,8 +178,12 @@ def read_ws(name):
 
         rows = values[1:]
         df = pd.DataFrame(rows, columns=header)
+
+        # Remove linhas completamente vazias
         df = df[~df.apply(lambda row: all(cell.strip() == "" for cell in row), axis=1)]
+
         return df
+
     except Exception as e:
         st.sidebar.error(f"Erro ao ler aba {name}: {e}")
         return pd.DataFrame()
@@ -205,6 +200,7 @@ st.sidebar.write("trabalhos:", len(trabalhos_df))
 st.sidebar.write("dacen:", len(dacen_df))
 st.sidebar.write("psi:", len(psi_df))
 
+# 🔄 Botão para atualizar planilhas manualmente
 if st.sidebar.button("🔄 Atualizar planilhas"):
     st.cache_data.clear()
     st.rerun()
@@ -239,6 +235,7 @@ def build_context(dfs, max_chars=15000):
         context = context[:max_chars] + "\n...[CONTEXTO TRUNCADO]"
     return context
 
+# ===== Cache de imagens do Drive =====
 @st.cache_data
 def load_drive_image(file_id):
     url = f"https://drive.google.com/uc?export=view&id={file_id}"
@@ -339,4 +336,3 @@ st.markdown(
     f'<img src="data:image/png;base64,{img_base64_logo}" class="logo-footer" />',
     unsafe_allow_html=True,
 )
-
