@@ -15,7 +15,6 @@ def get_usd_brl_rate():
     try:
         res = requests.get("https://economia.awesomeapi.com.br/json/last/USD-BRL")
         data = res.json()
-        # Usa "ask" como você tinha antes
         return float(data["USDBRL"]["ask"])
     except:
         return None
@@ -26,48 +25,59 @@ def format_dollar_values(text, rate):
     e formatar:
       - USD: se < 0.01 => 3 casas decimais, senão 2 casas
       - BRL: se < 1 => 4 casas decimais, senão 2 casas
-    Também evita deixar dígitos "sobrando" ao redor dos matches.
+    Corrige problemas de parsing e evita dígitos "sobrando" (ex.: '65' no final).
     """
     if "$" not in text or rate is None:
         return text
 
-    # Captura $ seguido de dígitos e possíveis separadores (pontos ou vírgulas) 
-    # em sequência (por ex.: $0.00865, $1.234,56, $2.5)
-    money_regex = re.compile(r'\$[0-9]+(?:[.,][0-9]+)*')
+    # Regex simples que captura $ seguido de números e opcional decimal (qualquer tamanho)
+    money_regex = re.compile(r'\$\d+(?:[.,]\d+)?')
 
     def parse_money_str(s):
-        # remove espaços e $ inicial
+        # s: string com o token encontrado (ex: "$0.00865" ou "$1.234,56")
         s = s.strip().replace(" ", "")
         if s.startswith('$'):
             s = s[1:]
-        # normaliza vírgula para ponto (decimal)
-        s = s.replace(',', '.')
-        # se houver múltiplos pontos, considerar o último como separador decimal
-        if '.' in s:
-            last = s.rfind('.')
-            integer_part = s[:last].replace('.', '')  # remove pontos milhar
-            frac_part = s[last+1:].replace('.', '')  # remove pontos extras por segurança
-            s_clean = integer_part + ('.' + frac_part if frac_part != '' else '')
+
+        # Normalizar: decidir separador decimal pelo último separador presente
+        # (se houver '.' e ',' usamos o que aparece por último como decimal)
+        if '.' in s and ',' in s:
+            if s.rfind(',') > s.rfind('.'):
+                # vírgula é decimal -> remove pontos (milhar) e troca vírgula por ponto
+                s = s.replace('.', '').replace(',', '.')
+            else:
+                # ponto é decimal -> remove vírgulas (milhar)
+                s = s.replace(',', '')
+        elif ',' in s:
+            # somente vírgulas presentes -> tratamos a vírgula como decimal,
+            # removendo possíveis pontos milhar (se existissem)
+            s = s.replace('.', '').replace(',', '.')
         else:
-            s_clean = s.replace('.', '')
+            # somente pontos ou somente dígitos
+            # se houver mais de 1 ponto, considerar o último como separador decimal
+            if s.count('.') > 1:
+                last = s.rfind('.')
+                integer_part = s[:last].replace('.', '')
+                frac_part = s[last+1:]
+                s = integer_part + '.' + frac_part
+            # caso haja 0 ou 1 ponto, deixamos como está (mantemos o ponto decimal)
         try:
-            return float(s_clean)
+            return float(s)
         except:
             return None
 
     def format_usd(n):
-        # USD: pequenos valores com 3 casas, senão 2 casas
+        # USD: valores muito pequenos (<0.01) com 3 casas, senão 2 casas
         if n < 0.01:
             return f"${n:.3f}"
         return f"${n:.2f}"
 
     def format_brl(n):
-        # BRL: <1 -> 4 casas; >=1 -> 2 casas; formatando para padrão brasileiro
+        # BRL: <1 -> 4 casas; >=1 -> 2 casas; converte para formato BR (milhar='.', dec=',')
         if n < 1:
             s = f"{n:,.4f}"
         else:
             s = f"{n:,.2f}"
-        # troca para formato BR: milhar = '.', decimal = ','
         return s.replace(",", "X").replace(".", ",").replace("X", ".")
 
     def repl(m):
@@ -336,3 +346,4 @@ st.markdown(
     f'<img src="data:image/png;base64,{img_base64_logo}" class="logo-footer" />',
     unsafe_allow_html=True,
 )
+
