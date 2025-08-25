@@ -24,30 +24,35 @@ def load_drive_image(file_id):
     res.raise_for_status()
     return res.content
 
-def format_dollar_values(text, rate):
+def parse_money_str(s):
+    """Transforma string $X.Y em float"""
+    s = s.strip().replace(" ", "")
+    if s.startswith("$"):
+        s = s[1:]
+    s = s.replace(",", ".")
+    return float(s)
+
+def to_brazilian(n):
+    return f"{n:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+def convert_dollar_text(text, rate, quantity=None):
     """
-    Converte corretamente valores em dólar para reais.
-    NÃO remove pontos; apenas troca vírgula por ponto.
+    Converte valores em dólar para reais.
+    Se quantity for fornecida, calcula o total.
     """
     if "$" not in text or rate is None:
         return text
+    
     money_regex = re.compile(r'\$\d+(?:[.,]\d+)?')
-    
-    def parse_money_str(s):
-        s = s.strip().replace(" ", "")
-        if s.startswith("$"):
-            s = s[1:]
-        s = s.replace(",", ".")  # apenas trocar vírgula por ponto
-        return float(s)
-    
-    def to_brazilian(n):
-        return f"{n:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
     
     def repl(m):
         orig = m.group(0)
         try:
-            val = parse_money_str(orig)
-            converted = val * rate  # apenas conversão dólar → real
+            val_usd = parse_money_str(orig)
+            total_val = val_usd
+            if quantity is not None:
+                total_val *= quantity
+            converted = total_val * rate
             return f"{orig} (R$ {to_brazilian(converted)})"
         except:
             return orig
@@ -73,7 +78,7 @@ erros_df = read_ws("erros")
 trabalhos_df = read_ws("trabalhos")
 dacen_df = read_ws("dacen")
 psi_df = read_ws("psi")
-gerais_df = read_ws("gerais")  # aba gerais
+gerais_df = read_ws("gerais")
 
 dfs = {
     "erros": erros_df,
@@ -91,7 +96,6 @@ st.sidebar.write("✅ Dacen:", len(dacen_df))
 st.sidebar.write("✅ Psi:", len(psi_df))
 st.sidebar.write("✅ Gerais:", len(gerais_df))
 
-# Mostrar todas as abas para depuração
 st.sidebar.header("Abas disponíveis na planilha")
 for ws in sh.worksheets():
     st.sidebar.write(ws.title)
@@ -114,18 +118,17 @@ client = genai.Client(GEMINI_API_KEY)
 # ===== Interface principal =====
 st.title("🤖 PlasPrint IA")
 query = st.text_area("Digite sua pergunta:")
+quantity_input = st.number_input("Quantidade (opcional, para calcular total em reais):", min_value=1, value=1)
 
 if st.button("Consultar") and query:
     # Monta o contexto para o Gemini
     context = ""
     
-    # Outras abas como CSV
     for name, df in dfs.items():
         if name != "gerais" and not df.empty:
             context += f"\n===== {name.upper()} =====\n"
             context += df.to_csv(index=False)
     
-    # Aba gerais como lista de informações
     if not gerais_df.empty:
         context += "\n===== INFORMAÇÕES GERAIS =====\n"
         for idx, row in gerais_df.iterrows():
@@ -142,7 +145,8 @@ Dados disponíveis:
     try:
         resp = client.models.generate_content(model="gemini-2.5-flash", contents=prompt)
         output = resp.text if resp else "Sem resposta"
-        output = format_dollar_values(output, usd_rate)  # agora a conversão está correta
+        # Converte corretamente com opção de total
+        output = convert_dollar_text(output, usd_rate, quantity=quantity_input)
         st.write(output)
     except Exception as e:
         st.error(f"Erro ao chamar Gemini: {e}")
