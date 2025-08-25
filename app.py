@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-import json, base64, os, re, requests, io
+import json, base64, re, requests, io
 import gspread
 from google.oauth2.service_account import Credentials
 from google import genai
@@ -9,8 +9,19 @@ from google import genai
 st.set_page_config(page_title="PlasPrint IA", page_icon="📊", layout="wide")
 
 # ===== Funções utilitárias =====
-def read_ws(sheet_name):
-    ws = sh.worksheet(sheet_name)
+def remove_accents(txt):
+    return ''.join(c for c in unicodedata.normalize('NFD', txt) if unicodedata.category(c) != 'Mn')
+
+def find_ws_by_name(sh, target_name):
+    target_norm = remove_accents(target_name.strip().lower())
+    for ws in sh.worksheets():
+        if remove_accents(ws.title.strip().lower()) == target_norm:
+            return ws
+    return None
+
+def read_ws(ws):
+    if ws is None:
+        return pd.DataFrame()
     rows = ws.get_all_records()
     return pd.DataFrame(rows)
 
@@ -56,12 +67,12 @@ creds = Credentials.from_service_account_info(sa_json, scopes=["https://www.goog
 gc = gspread.authorize(creds)
 sh = gc.open_by_key(SHEET_ID)
 
-# ===== Carregar DataFrames =====
-erros_df = read_ws("erros")
-trabalhos_df = read_ws("trabalhos")
-dacen_df = read_ws("dacen")
-psi_df = read_ws("psi")
-informacoes_df = read_ws("informações gerais")  # 🔹 aba direta
+# ===== Carregar abas =====
+erros_df = read_ws(find_ws_by_name(sh, "erros"))
+trabalhos_df = read_ws(find_ws_by_name(sh, "trabalhos"))
+dacen_df = read_ws(find_ws_by_name(sh, "dacen"))
+psi_df = read_ws(find_ws_by_name(sh, "psi"))
+informacoes_df = read_ws(find_ws_by_name(sh, "informações gerais"))
 
 dfs = {
     "erros": erros_df,
@@ -78,6 +89,11 @@ st.sidebar.write("✅ Trabalhos:", len(trabalhos_df))
 st.sidebar.write("✅ Dacen:", len(dacen_df))
 st.sidebar.write("✅ Psi:", len(psi_df))
 st.sidebar.write("✅ Informações gerais:", len(informacoes_df))
+
+# Mostrar todas as abas detectadas para depuração
+st.sidebar.header("Abas disponíveis na planilha")
+for ws in sh.worksheets():
+    st.sidebar.write(ws.title)
 
 # ===== Cotação do dólar =====
 @st.cache_data(ttl=3600)
@@ -99,7 +115,7 @@ st.title("🤖 PlasPrint IA")
 query = st.text_area("Digite sua pergunta:")
 
 if st.button("Consultar") and query:
-    # Monta o contexto
+    # Monta o contexto para o Gemini
     context = ""
     for name, df in dfs.items():
         if not df.empty:
