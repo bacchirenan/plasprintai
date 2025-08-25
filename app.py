@@ -19,25 +19,25 @@ def get_usd_brl_rate():
     except:
         return None
 
+# ===== Função corrigida de conversão dólar -> real =====
 def format_dollar_values(text, rate):
     if "$" not in text or rate is None:
         return text
 
-    # Regex captura números decimais com ponto ou vírgula
-    money_regex = re.compile(r'\$\d+[\.,]?\d*')
+    # Regex captura valores em dólar, inclusive decimais pequenos
+    money_regex = re.compile(r'\$\d*\.\d+|\$\d+')
 
     def parse_money_str(s):
         s = s.strip().replace(" ", "")
-        if s.startswith('$'):
+        if s.startswith("$"):
             s = s[1:]
-        s = s.replace(",", ".")
         try:
             return float(s)
         except:
             return None
 
     def to_brazilian(n):
-        # Converte para string brasileira: ponto milhar, vírgula decimal
+        # Formato brasileiro: ponto milhar, vírgula decimal
         return f"{n:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
     def repl(m):
@@ -147,11 +147,8 @@ def read_ws(name):
 
         rows = values[1:]
         df = pd.DataFrame(rows, columns=header)
-
         df = df[~df.apply(lambda row: all(cell.strip() == "" for cell in row), axis=1)]
-
         return df
-
     except Exception as e:
         st.sidebar.error(f"Erro ao ler aba {name}: {e}")
         return pd.DataFrame()
