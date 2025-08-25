@@ -15,7 +15,7 @@ def remove_accents(txt):
 
 def resolve_ws_title(sh, name):
     for ws in sh.worksheets():
-        if remove_accents(ws.title.lower()) == remove_accents(name.lower()):
+        if remove_accents(ws.title.strip().lower()) == remove_accents(name.strip().lower()):
             return ws.title
     return name
 
@@ -75,25 +75,14 @@ def format_dollar_values(text, rate):
     if "$" not in text or rate is None:
         return text
 
-    money_regex = re.compile(r'\$\d+(?:[.,]\d{1,3})*(?:[.,]\d+)?')
+    money_regex = re.compile(r'\$\d+(?:[.,]\d+)?')
 
     def parse_money_str(s):
         s = s.strip().replace(" ", "")
-        if s.startswith('$'):
+        if s.startswith("$"):
             s = s[1:]
-
-        if ',' in s and '.' not in s:
-            return float(s.replace('.', '').replace(',', '.'))
-        if '.' in s and ',' not in s:
-            parts = s.split('.')
-            if len(parts) > 1 and len(parts[-1]) <= 3:
-                return float(s)
-            return float(s.replace('.', ''))
-        if '.' in s and ',' in s:
-            if s.rfind('.') > s.rfind(','):
-                return float(s.replace(',', ''))
-            else:
-                return float(s.replace('.', '').replace(',', '.'))
+        # remove pontos de milhares e transforma vírgula em ponto
+        s = s.replace(".", "").replace(",", ".")
         return float(s)
 
     def to_brazilian(n):
