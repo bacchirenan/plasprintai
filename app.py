@@ -4,7 +4,7 @@ import json, base64, os, re, requests, io
 import gspread
 from google.oauth2.service_account import Credentials
 from google import genai
-import unicodedata  # 🔹 para remover acentos
+import unicodedata
 
 # ===== Configuração da página =====
 st.set_page_config(page_title="PlasPrint IA", page_icon="📊", layout="wide")
@@ -27,7 +27,6 @@ def read_ws(sheet_name):
 # ===== Credenciais Google Sheets =====
 SERVICE_ACCOUNT_B64 = st.secrets["SERVICE_ACCOUNT_B64"]
 SHEET_ID = st.secrets["SHEET_ID"]
-
 service_account_info = json.loads(base64.b64decode(SERVICE_ACCOUNT_B64))
 creds = Credentials.from_service_account_info(service_account_info, scopes=["https://www.googleapis.com/auth/spreadsheets"])
 client = gspread.authorize(creds)
@@ -47,7 +46,7 @@ st.sidebar.write("✅ Erros:", len(erros_df))
 st.sidebar.write("✅ Trabalhos:", len(trabalhos_df))
 st.sidebar.write("✅ Dacen:", len(dacen_df))
 st.sidebar.write("✅ Psi:", len(psi_df))
-st.sidebar.write("✅ Informações gerais:", len(informacoes_df))
+st.sidebar.write(f"✅ {info_title}:", len(informacoes_df))
 
 # ===== Dicionário de DataFrames =====
 dfs = {
@@ -55,7 +54,7 @@ dfs = {
     "trabalhos": trabalhos_df,
     "dacen": dacen_df,
     "psi": psi_df,
-    "informacoes_gerais": informacoes_df,
+    info_title: informacoes_df,
 }
 
 # ===== Cotação do dólar =====
@@ -81,7 +80,6 @@ def format_dollar_values(text, rate):
         s = s.strip().replace(" ", "")
         if s.startswith("$"):
             s = s[1:]
-        # remove pontos de milhares e transforma vírgula em ponto
         s = s.replace(".", "").replace(",", ".")
         return float(s)
 
@@ -108,6 +106,14 @@ GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
 genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel("gemini-1.5-flash")
 
+# ===== Função para carregar imagens do Drive =====
+@st.cache_data
+def load_drive_image(file_id):
+    url = f"https://drive.google.com/uc?export=view&id={file_id}"
+    res = requests.get(url)
+    res.raise_for_status()
+    return res.content
+
 # ===== Interface principal =====
 st.title("🤖 PlasPrint IA")
 query = st.text_area("Digite sua pergunta:")
@@ -131,6 +137,21 @@ if st.button("Consultar") and query:
     output = response.text if response else "Sem resposta"
     output = format_dollar_values(output, usd_rate)
     st.write(output)
+
+    # ===== Exibir Informações Gerais com imagens =====
+    if not informacoes_df.empty:
+        st.markdown(f"### {info_title}")
+        for idx, row in informacoes_df.iterrows():
+            info_text = row.get("Informações", "")
+            st.markdown(f"<p>{info_text}</p>", unsafe_allow_html=True)
+            img_link = row.get("Imagem", "")
+            if img_link:
+                try:
+                    file_id = re.search(r'/d/([a-zA-Z0-9_-]+)/', img_link).group(1)
+                    img_bytes = io.BytesIO(load_drive_image(file_id))
+                    st.image(img_bytes, use_container_width=True)
+                except:
+                    st.warning(f"Não foi possível carregar a imagem: {img_link}")
 
 # ===== Botão de atualização manual =====
 if st.sidebar.button("🔄 Atualizar planilha"):
