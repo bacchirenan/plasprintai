@@ -23,13 +23,13 @@ def format_dollar_values(text, rate):
     if "$" not in text or rate is None:
         return text
 
-    # Captura apenas valores em dólar do tipo $0.008, $12.34 etc.
-    money_regex = re.compile(r'\$\d+(?:\.\d+)?')
+    # Regex que captura número após $ até o primeiro caractere inválido
+    money_regex = re.compile(r'\$(\d+(?:\.\d+)?)')
 
     def repl(m):
         orig = m.group(0)
         try:
-            val = float(orig.replace("$", ""))
+            val = float(m.group(1))  # captura apenas o número
             converted = val * rate
             brl = f"{converted:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
             return f"{orig} (R$ {brl})"
@@ -37,7 +37,6 @@ def format_dollar_values(text, rate):
             return orig
 
     formatted = money_regex.sub(repl, text)
-    formatted = formatted.strip()
     formatted += "\n(valores sem impostos)"
     return formatted
 
@@ -290,4 +289,5 @@ st.markdown(
     f'<img src="data:image/png;base64,{img_base64_logo}" class="logo-footer" />',
     unsafe_allow_html=True,
 )
+
 
