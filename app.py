@@ -9,21 +9,14 @@ from google import genai
 st.set_page_config(page_title="PlasPrint IA", page_icon="📊", layout="wide")
 
 # ===== Funções utilitárias =====
-def remove_accents(txt):
-    return ''.join(c for c in unicodedata.normalize('NFD', txt) if unicodedata.category(c) != 'Mn')
-
-def find_ws_by_name(sh, target_name):
-    target_norm = remove_accents(target_name.strip().lower())
-    for ws in sh.worksheets():
-        if remove_accents(ws.title.strip().lower()) == target_norm:
-            return ws
-    return None
-
-def read_ws(ws):
-    if ws is None:
+def read_ws(sheet_name):
+    try:
+        ws = sh.worksheet(sheet_name)
+        rows = ws.get_all_records()
+        return pd.DataFrame(rows)
+    except Exception as e:
+        st.sidebar.error(f"Erro ao ler aba {sheet_name}: {e}")
         return pd.DataFrame()
-    rows = ws.get_all_records()
-    return pd.DataFrame(rows)
 
 def load_drive_image(file_id):
     url = f"https://drive.google.com/uc?export=view&id={file_id}"
@@ -68,18 +61,18 @@ gc = gspread.authorize(creds)
 sh = gc.open_by_key(SHEET_ID)
 
 # ===== Carregar abas =====
-erros_df = read_ws(find_ws_by_name(sh, "erros"))
-trabalhos_df = read_ws(find_ws_by_name(sh, "trabalhos"))
-dacen_df = read_ws(find_ws_by_name(sh, "dacen"))
-psi_df = read_ws(find_ws_by_name(sh, "psi"))
-informacoes_df = read_ws(find_ws_by_name(sh, "informações gerais"))
+erros_df = read_ws("erros")
+trabalhos_df = read_ws("trabalhos")
+dacen_df = read_ws("dacen")
+psi_df = read_ws("psi")
+gerais_df = read_ws("gerais")  # 🔹 aba gerais
 
 dfs = {
     "erros": erros_df,
     "trabalhos": trabalhos_df,
     "dacen": dacen_df,
     "psi": psi_df,
-    "informações gerais": informacoes_df
+    "gerais": gerais_df
 }
 
 # ===== Sidebar =====
@@ -88,9 +81,9 @@ st.sidebar.write("✅ Erros:", len(erros_df))
 st.sidebar.write("✅ Trabalhos:", len(trabalhos_df))
 st.sidebar.write("✅ Dacen:", len(dacen_df))
 st.sidebar.write("✅ Psi:", len(psi_df))
-st.sidebar.write("✅ Informações gerais:", len(informacoes_df))
+st.sidebar.write("✅ Gerais:", len(gerais_df))
 
-# Mostrar todas as abas detectadas para depuração
+# Mostrar todas as abas para depuração
 st.sidebar.header("Abas disponíveis na planilha")
 for ws in sh.worksheets():
     st.sidebar.write(ws.title)
@@ -137,10 +130,10 @@ Dados disponíveis:
     except Exception as e:
         st.error(f"Erro ao chamar Gemini: {e}")
 
-    # ===== Mostrar Informações Gerais com imagens =====
-    if not informacoes_df.empty:
-        st.markdown("### Informações Gerais")
-        for idx, row in informacoes_df.iterrows():
+    # ===== Mostrar Gerais com imagens =====
+    if not gerais_df.empty:
+        st.markdown("### Gerais")
+        for idx, row in gerais_df.iterrows():
             info_text = row.get("Informações", "")
             st.markdown(f"<p>{info_text}</p>", unsafe_allow_html=True)
             img_link = row.get("Imagem", "")
