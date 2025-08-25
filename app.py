@@ -23,16 +23,17 @@ def format_dollar_values(text, rate):
     if "$" not in text or rate is None:
         return text
 
-    # Regex que captura número após $ até o primeiro caractere inválido
+    # Regex que captura o valor numérico imediatamente após o $
     money_regex = re.compile(r'\$(\d+(?:\.\d+)?)')
 
     def repl(m):
         orig = m.group(0)
+        num_str = m.group(1)
         try:
-            val = float(m.group(1))  # captura apenas o número
+            val = float(num_str)
             converted = val * rate
             brl = f"{converted:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-            return f"{orig} (R$ {brl})"
+            return f"${val:.3f} (R$ {brl})"  # mostra o valor em dólar com 3 casas
         except:
             return orig
 
@@ -289,6 +290,7 @@ st.markdown(
     f'<img src="data:image/png;base64,{img_base64_logo}" class="logo-footer" />',
     unsafe_allow_html=True,
 )
+
 
 
 
