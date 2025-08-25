@@ -19,12 +19,10 @@ def get_usd_brl_rate():
     except:
         return None
 
-# ===== Função corrigida de formatação de valores =====
 def format_dollar_values(text, rate):
     if "$" not in text or rate is None:
         return text
 
-    # Regex que captura $ seguido de números, incluindo várias casas decimais
     money_regex = re.compile(r'\$\d+(?:[.,]\d+)?')
 
     def parse_money_str(s):
@@ -37,26 +35,17 @@ def format_dollar_values(text, rate):
         except:
             return None
 
-    def format_usd(n):
-        # valores muito pequenos <0.01 -> 5 casas decimais
-        return f"${n:.5f}".rstrip('0').rstrip('.') if n < 0.01 else f"${n:.2f}"
-
-    def format_brl(n):
-        # BRL: valores muito pequenos <1 -> 4 casas decimais
-        if n < 1:
-            s = f"{n:.4f}"
-        else:
-            s = f"{n:,.2f}"
-        return s.replace(",", "X").replace(".", ",").replace("X", ".")
-
     def repl(m):
         orig = m.group(0)
         val = parse_money_str(orig)
         if val is None:
             return orig
         converted = val * rate
-        usd_fmt = format_usd(val)
-        brl_fmt = format_brl(converted)
+        # Formata dólar com 5 casas decimais se <0.01, caso contrário 2 casas
+        usd_fmt = f"${val:.5f}" if val < 0.01 else f"${val:.2f}"
+        # Formata real com 4 casas decimais se <1, caso contrário 2 casas
+        brl_fmt = f"{converted:.4f}" if converted < 1 else f"{converted:,.2f}"
+        brl_fmt = brl_fmt.replace(',', 'X').replace('.', ',').replace('X', '.')
         return f"{usd_fmt} (R$ {brl_fmt})"
 
     formatted = money_regex.sub(repl, text)
@@ -178,6 +167,7 @@ st.sidebar.write("trabalhos:", len(trabalhos_df))
 st.sidebar.write("dacen:", len(dacen_df))
 st.sidebar.write("psi:", len(psi_df))
 
+# 🔄 Botão para atualizar planilhas manualmente
 if st.sidebar.button("🔄 Atualizar planilhas"):
     st.cache_data.clear()
     st.rerun()
@@ -296,8 +286,4 @@ Responda de forma clara, sem citar a aba ou linha da planilha.
 st.markdown(
     """
 <style>
-.version-tag { position: fixed; bottom: 50px; right: 25px; font-size: 12px; color: white; opacity: 0.7; z-index: 100; }
-.logo-footer { position: fixed; bottom: 5px; left: 50%; transform: translateX(-50%); width: 120px; z-index: 100; }
-</style>
-<div class="version-tag">V1.0</div>
-
+.version-tag { position: fixed; bottom: 50px; right: 25px; font-size: 12px; color: white; opacity
