@@ -23,19 +23,21 @@ def format_dollar_values(text, rate):
     if "$" not in text or rate is None:
         return text
 
-    # Regex para capturar valores em dólar, incluindo decimais longos
-    money_regex = re.compile(r'\$\d+(?:\.\d+)?')
+    # Regex que captura valores em dólar incluindo decimais longos
+    money_regex = re.compile(r'\$\d*\.\d+|\$\d+')
 
     def parse_money_str(s):
         s = s.strip().replace(" ", "")
         if s.startswith('$'):
             s = s[1:]
         try:
+            # Converte corretamente qualquer valor decimal
             return float(s)
         except:
             return None
 
     def to_brazilian(n):
+        # Converte float em string no formato brasileiro
         return f"{n:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
     def repl(m):
@@ -51,6 +53,7 @@ def format_dollar_values(text, rate):
     formatted = formatted.strip()
     formatted += "\n(valores sem impostos)"
     return formatted
+
 
 def inject_favicon():
     favicon_path = "favicon.ico"
@@ -288,3 +291,4 @@ st.markdown(
 <div class="version-tag">V1.0</div>
 """,
     unsafe
+
