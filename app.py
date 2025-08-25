@@ -25,6 +25,7 @@ def load_drive_image(file_id):
     return res.content
 
 def format_dollar_values(text, rate):
+    """Converte valores em dólar para reais corretamente, sem multiplicar pelo número de unidades."""
     if "$" not in text or rate is None:
         return text
     money_regex = re.compile(r'\$\d+(?:[.,]\d+)?')
@@ -33,7 +34,7 @@ def format_dollar_values(text, rate):
         s = s.strip().replace(" ", "")
         if s.startswith("$"):
             s = s[1:]
-        s = s.replace(",", ".")  # 🔹 Corrigido: apenas trocar vírgula por ponto
+        s = s.replace(",", ".")  # 🔹 só trocar vírgula por ponto
         return float(s)
     
     def to_brazilian(n):
@@ -43,7 +44,7 @@ def format_dollar_values(text, rate):
         orig = m.group(0)
         try:
             val = parse_money_str(orig)
-            converted = val * rate
+            converted = val * rate  # apenas converte dólar → real
             return f"{orig} (R$ {to_brazilian(converted)})"
         except:
             return orig
