@@ -7,104 +7,106 @@ from google import genai
 import unicodedata  # 🔹 para remover acentos
 
 # ===== Configuração da página =====
-st.set_page_config(page_title="PlasPrint IA", page_icon="favicon.ico", layout="wide")
+st.set_page_config(page_title="PlasPrint IA", page_icon="📊", layout="wide")
 
-# ===== Funções auxiliares =====
-@st.cache_data(ttl=300)
-def get_usd_brl_rate():
+# ===== Funções utilitárias =====
+def remove_accents(txt):
+    return ''.join(c for c in unicodedata.normalize('NFD', txt) if unicodedata.category(c) != 'Mn')
+
+def resolve_ws_title(sh, name):
+    for ws in sh.worksheets():
+        if remove_accents(ws.title.lower()) == remove_accents(name.lower()):
+            return ws.title
+    return name
+
+def read_ws(sheet_name):
+    ws = sh.worksheet(sheet_name)
+    rows = ws.get_all_records()
+    return pd.DataFrame(rows)
+
+# ===== Credenciais Google Sheets =====
+SERVICE_ACCOUNT_B64 = st.secrets["SERVICE_ACCOUNT_B64"]
+SHEET_ID = st.secrets["SHEET_ID"]
+
+service_account_info = json.loads(base64.b64decode(SERVICE_ACCOUNT_B64))
+creds = Credentials.from_service_account_info(service_account_info, scopes=["https://www.googleapis.com/auth/spreadsheets"])
+client = gspread.authorize(creds)
+sh = client.open_by_key(SHEET_ID)
+
+# ===== Carregar abas =====
+erros_df = read_ws(resolve_ws_title(sh, "erros"))
+trabalhos_df = read_ws(resolve_ws_title(sh, "trabalhos"))
+dacen_df = read_ws(resolve_ws_title(sh, "dacen"))
+psi_df = read_ws(resolve_ws_title(sh, "psi"))
+info_title = resolve_ws_title(sh, "informações gerais")
+informacoes_df = read_ws(info_title)
+
+# ===== Sidebar =====
+st.sidebar.header("📑 Dados carregados")
+st.sidebar.write("✅ Erros:", len(erros_df))
+st.sidebar.write("✅ Trabalhos:", len(trabalhos_df))
+st.sidebar.write("✅ Dacen:", len(dacen_df))
+st.sidebar.write("✅ Psi:", len(psi_df))
+st.sidebar.write("✅ Informações gerais:", len(informacoes_df))
+
+# ===== Dicionário de DataFrames =====
+dfs = {
+    "erros": erros_df,
+    "trabalhos": trabalhos_df,
+    "dacen": dacen_df,
+    "psi": psi_df,
+    "informacoes_gerais": informacoes_df,
+}
+
+# ===== Cotação do dólar =====
+@st.cache_data(ttl=3600)
+def get_usd_rate():
     try:
-        res = requests.get("https://economia.awesomeapi.com.br/json/last/USD-BRL")
-        data = res.json()
-        return float(data["USDBRL"]["ask"])
+        resp = requests.get("https://economia.awesomeapi.com.br/json/last/USD-BRL")
+        data = resp.json()
+        return float(data["USDBRL"]["bid"])
     except:
         return None
 
-def _normalize_text(s: str) -> str:
-    """Normaliza texto para comparação (sem acento, minúsculo, 1 espaço)."""
-    if s is None:
-        return ""
-    s = unicodedata.normalize("NFKD", s)
-    s = "".join(ch for ch in s if not unicodedata.combining(ch))
-    s = re.sub(r"\s+", " ", s).strip().lower()
-    return s
+usd_rate = get_usd_rate()
 
-def resolve_ws_title(sh, preferred_name: str) -> str:
-    """
-    Encontra o título real da worksheet ignorando acentos/caixa.
-    Ex.: 'informações gerais' -> 'Informações Gerais'
-    """
-    target = _normalize_text(preferred_name)
-    titles = { _normalize_text(ws.title): ws.title for ws in sh.worksheets() }
-    if target in titles:
-        return titles[target]
-    # fallback: contém
-    for norm, real in titles.items():
-        if target in norm:
-            return real
-    # se não achar, retorna o próprio nome (para manter comportamento anterior)
-    return preferred_name
-
+# ===== Conversão de valores em dólar =====
 def format_dollar_values(text, rate):
-    """
-    Converte valores em USD presentes no texto para BRL, mantendo o original.
-    Corrige interpretação de separadores (., ,) para evitar erros como
-    $0.794 -> R$ 4.302,13.
-    """
     if "$" not in text or rate is None:
         return text
 
-    money_regex = re.compile(r'\$\d+(?:[.,]\d{3})*(?:[.,]\d+)?')
+    money_regex = re.compile(r'\$\d+(?:[.,]\d{1,3})*(?:[.,]\d+)?')
 
     def parse_money_str(s):
         s = s.strip().replace(" ", "")
         if s.startswith('$'):
             s = s[1:]
 
-        # Casos com os dois separadores (ex.: 1.234,56 ou 1,234.56)
-        if '.' in s and ',' in s:
-            last_dot = s.rfind('.')
-            last_comma = s.rfind(',')
-            if last_dot > last_comma:
-                # Padrão US: vírgulas são milhar, ponto é decimal
-                s_clean = s.replace(',', '')
-            else:
-                # Padrão BR: pontos são milhar, vírgula é decimal
-                s_clean = s.replace('.', '').replace(',', '.')
-        elif ',' in s:
-            # Só vírgula: decide se é decimal pela quantidade após a última vírgula
-            frac_len = len(s.split(',')[-1])
-            if 1 <= frac_len <= 3:  # permite 0,008 / 0,79 / 12,345
-                s_clean = s.replace('.', '').replace(',', '.')
-            else:
-                # provavelmente milhar (ex.: 1,234,567)
-                s_clean = s.replace(',', '')
-        elif '.' in s:
-            # Só ponto: decide se é milhar pelo padrão ###.###.###
+        if ',' in s and '.' not in s:
+            return float(s.replace('.', '').replace(',', '.'))
+        if '.' in s and ',' not in s:
             parts = s.split('.')
-            if len(parts) > 1 and all(len(p) == 3 for p in parts[1:]) and 1 <= len(parts[0]) <= 3:
-                s_clean = s.replace('.', '')
+            if len(parts) > 1 and len(parts[-1]) <= 3:
+                return float(s)
+            return float(s.replace('.', ''))
+        if '.' in s and ',' in s:
+            if s.rfind('.') > s.rfind(','):
+                return float(s.replace(',', ''))
             else:
-                # ponto decimal comum
-                s_clean = s
-        else:
-            s_clean = s
-
-        try:
-            return float(s_clean)
-        except:
-            return None
+                return float(s.replace('.', '').replace(',', '.'))
+        return float(s)
 
     def to_brazilian(n):
         return f"{n:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
     def repl(m):
         orig = m.group(0)
-        val = parse_money_str(orig)
-        if val is None:
+        try:
+            val = parse_money_str(orig)
+            converted = val * rate
+            return f"{orig} (R$ {to_brazilian(converted)})"
+        except:
             return orig
-        converted = val * rate
-        brl = to_brazilian(converted)
-        return f"{orig} (R$ {brl})"
 
     formatted = money_regex.sub(repl, text)
     if not formatted.endswith("\n"):
@@ -112,265 +114,36 @@ def format_dollar_values(text, rate):
     formatted += "(valores sem impostos)"
     return formatted
 
-def inject_favicon():
-    favicon_path = "favicon.ico"
-    try:
-        with open(favicon_path, "rb") as f:
-            data = base64.b64encode(f.read()).decode()
-        st.markdown(f'<link rel="icon" href="data:image/x-icon;base64,{data}" type="image/x-icon" />', unsafe_allow_html=True)
-    except:
-        pass
-inject_favicon()
+# ===== Configuração Gemini =====
+GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
+genai.configure(api_key=GEMINI_API_KEY)
+model = genai.GenerativeModel("gemini-1.5-flash")
 
-def get_base64_of_jpg(image_path):
-    with open(image_path, "rb") as img_file:
-        return base64.b64encode(img_file.read()).decode()
+# ===== Interface principal =====
+st.title("🤖 PlasPrint IA")
+query = st.text_area("Digite sua pergunta:")
 
-def get_base64_font(path):
-    with open(path, "rb") as f:
-        return base64.b64encode(f.read()).decode()
+if st.button("Consultar") and query:
+    context = ""
+    for name, df in dfs.items():
+        if not df.empty:
+            context += f"\n===== {name.upper()} =====\n"
+            context += df.to_csv(index=False)
 
-# ===== Carregar background e fonte =====
-background_image = "background.jpg"
-img_base64 = get_base64_of_jpg(background_image)
-font_base64 = get_base64_font("font.ttf")
+    prompt = f"""
+    Você é um assistente que responde com base nos dados abaixo.
+    Pergunta: {query}
 
-st.markdown(f"""
-<style>
-@font-face {{
-    font-family: 'CustomFont';
-    src: url(data:font/ttf;base64,{font_base64}) format('truetype');
-}}
-h1.custom-font {{
-    font-family: 'CustomFont', sans-serif !important;
-    text-align: center;
-    font-size: 380%;
-}}
-p.custom-font {{
-    font-family: 'CustomFont', sans-serif !important;
-    font-weight: bold;
-    text-align: left;
-}}
-div.stButton > button {{
-    font-family: 'CustomFont', sans-serif !important;
-}}
-div.stTextInput > div > input {{
-    font-family: 'CustomFont', sans-serif !important;
-}}
-.stApp {{
-    background-image: url("data:image/jpg;base64,{img_base64}");
-    background-size: cover;
-    background-position: center;
-    background-repeat: no-repeat;
-    background-attachment: fixed;
-}}
-</style>
-""", unsafe_allow_html=True)
+    Dados disponíveis:
+    {context}
+    """
 
-# ===== Carregar segredos =====
-try:
-    GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
-    SHEET_ID = st.secrets["SHEET_ID"]
-    SERVICE_ACCOUNT_B64 = st.secrets["SERVICE_ACCOUNT_B64"]
-except:
-    st.error("Configure os segredos GEMINI_API_KEY, SHEET_ID e SERVICE_ACCOUNT_B64.")
-    st.stop()
+    response = model.generate_content(prompt)
+    output = response.text if response else "Sem resposta"
+    output = format_dollar_values(output, usd_rate)
+    st.write(output)
 
-sa_json = json.loads(base64.b64decode(SERVICE_ACCOUNT_B64).decode())
-scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
-creds = Credentials.from_service_account_info(sa_json, scopes=scopes)
-gc = gspread.authorize(creds)
-try:
-    sh = gc.open_by_key(SHEET_ID)
-except Exception as e:
-    st.error(f"Não consegui abrir a planilha: {e}")
-    st.stop()
-
-# ===== Carregar DataFrames com cache =====
-@st.cache_data
-def read_ws(name):
-    try:
-        ws = sh.worksheet(name)
-        values = ws.get_all_values()
-
-        if not values:
-            return pd.DataFrame()
-
-        max_len = max(len(r) for r in values)
-        values = [r + [""] * (max_len - len(r)) for r in values]
-
-        header = values[0]
-        if len(header) < max_len:
-            header += [f"col_{i}" for i in range(len(header), max_len)]
-
-        rows = values[1:]
-        df = pd.DataFrame(rows, columns=header)
-
-        # Remove linhas completamente vazias
-        df = df[~df.apply(lambda row: all(cell.strip() == "" for cell in row), axis=1)]
-
-        return df
-
-    except Exception as e:
-        st.sidebar.error(f"Erro ao ler aba {name}: {e}")
-        return pd.DataFrame()
-
-erros_df = read_ws("erros")
-trabalhos_df = read_ws("trabalhos")
-dacen_df = read_ws("dacen")
-psi_df = read_ws("psi")
-
-# 🔹 Resolve e carrega a aba 'informações gerais' de forma tolerante a acentos/caixa
-info_title = resolve_ws_title(sh, "informações gerais")
-informacoes_df = read_ws(info_title)
-
-# ===== Sidebar =====
-st.sidebar.header("Dados carregados")
-st.sidebar.write("erros:", len(erros_df))
-st.sidebar.write("trabalhos:", len(trabalhos_df))
-st.sidebar.write("dacen:", len(dacen_df))
-st.sidebar.write("psi:", len(psi_df))
-st.sidebar.write(f"{info_title}:", len(informacoes_df))  # exibe o nome real da aba
-
-# 🔄 Botão para atualizar planilhas manualmente
-if st.sidebar.button("🔄 Atualizar planilhas"):
+# ===== Botão de atualização manual =====
+if st.sidebar.button("🔄 Atualizar planilha"):
     st.cache_data.clear()
     st.rerun()
-
-with st.sidebar.expander("Prévia da aba erros"):
-    st.write(erros_df.tail(10))
-
-# ===== Cliente Gemini =====
-os.environ["GEMINI_API_KEY"] = GEMINI_API_KEY
-client = genai.Client()
-
-# ===== Funções para busca =====
-def search_relevant_rows(dfs, max_per_sheet=200):
-    results = {}
-    for name, df in dfs.items():
-        if df.empty:
-            continue
-        results[name] = df.head(max_per_sheet)
-    return results
-
-def build_context(dfs, max_chars=15000):
-    parts = []
-    for name, df in dfs.items():
-        if df.empty:
-            continue
-        parts.append(f"--- {name} ---")
-        for r in df.to_dict(orient="records"):
-            row_items = [f"{k}: {v}" for k, v in r.items() if str(v).strip() not in ["", "None", "nan"]]
-            parts.append(" | ".join(row_items))
-    context = "\n".join(parts)
-    if len(context) > max_chars:
-        context = context[:max_chars] + "\n...[CONTEXTO TRUNCADO]"
-    return context
-
-# ===== Cache de imagens do Drive =====
-@st.cache_data
-def load_drive_image(file_id):
-    url = f"https://drive.google.com/uc?export=view&id={file_id}"
-    res = requests.get(url)
-    res.raise_for_status()
-    return res.content
-
-def show_drive_images_from_text(text):
-    drive_links = re.findall(r'https?://drive\.google\.com/file/d/([a-zA-Z0-9_-]+)[^/]*/view', text)
-    for file_id in drive_links:
-        try:
-            img_bytes = io.BytesIO(load_drive_image(file_id))
-            st.image(img_bytes, use_container_width=True)
-        except:
-            st.warning(f"Não foi possível carregar a imagem do Drive: {file_id}")
-
-def remove_drive_links(text):
-    return re.sub(r'https?://drive\.google\.com/file/d/[a-zA-Z0-9_-]+/view\?usp=drive_link', '', text)
-
-# ===== Layout principal =====
-col_esq, col_meio, col_dir = st.columns([1, 2, 1])
-with col_meio:
-    st.markdown("<h1 class='custom-font'>PlasPrint IA</h1><br>", unsafe_allow_html=True)
-    st.markdown("<p class='custom-font'>Qual a sua dúvida?</p>", unsafe_allow_html=True)
-    pergunta = st.text_input("", key="central_input", label_visibility="collapsed")
-
-    if "botao_texto" not in st.session_state:
-        st.session_state.botao_texto = "Buscar"
-
-    buscar = st.button(st.session_state.botao_texto, use_container_width=True)
-
-    if buscar:
-        if not pergunta.strip():
-            st.warning("Digite uma pergunta.")
-        else:
-            st.session_state.botao_texto = "Aguarde"
-            with st.spinner("Processando resposta..."):
-                rate = get_usd_brl_rate()
-                if rate is None:
-                    st.error("Não foi possível obter a cotação do dólar.")
-                else:
-                    dfs = {
-                        "erros": erros_df,
-                        "trabalhos": trabalhos_df,
-                        "dacen": dacen_df,
-                        "psi": psi_df,
-                        info_title: informacoes_df,  # 🔹 incluído no contexto com o nome real
-                    }
-                    filtered_dfs = search_relevant_rows(dfs, max_per_sheet=200)
-
-                    with st.sidebar.expander("Linhas enviadas ao Gemini", expanded=False):
-                        for name, df_env in filtered_dfs.items():
-                            st.write(f"{name}: {len(df_env)}")
-
-                    if not filtered_dfs:
-                        st.warning(f'Não encontrei nada relacionado a "{pergunta}" nas planilhas.')
-                    else:
-                        context = build_context(filtered_dfs)
-                        prompt = f"""
-Você é um assistente técnico que responde em português.
-Baseie-se **apenas** nos dados abaixo (planilhas). 
-Responda de forma objetiva, sem citar de onde veio a informação ou a fonte.
-Se houver links de imagens, inclua-os no final.
-
-Dados:
-{context}
-
-Pergunta:
-{pergunta}
-
-Responda de forma clara, sem citar a aba ou linha da planilha.
-"""
-                        try:
-                            resp = client.models.generate_content(model="gemini-2.5-flash", contents=prompt)
-                            output_fmt = format_dollar_values(resp.text, rate)
-                            output_fmt = remove_drive_links(output_fmt)
-                            st.markdown(
-                                f"<div style='text-align:center; margin-top:20px;'>{output_fmt.replace(chr(10),'<br/>')}</div>",
-                                unsafe_allow_html=True,
-                            )
-                            show_drive_images_from_text(resp.text)
-                        except Exception as e:
-                            st.error(f"Erro ao chamar Gemini: {e}")
-            st.session_state.botao_texto = "Buscar"
-
-# ===== Rodapé e logo =====
-st.markdown(
-    """
-<style>
-.version-tag { position: fixed; bottom: 50px; right: 25px; font-size: 12px; color: white; opacity: 0.7; z-index: 100; }
-.logo-footer { position: fixed; bottom: 5px; left: 50%; transform: translateX(-50%); width: 120px; z-index: 100; }
-</style>
-<div class="version-tag">V1.0</div>
-""",
-    unsafe_allow_html=True,
-)
-
-def get_base64_img(path):
-    with open(path, "rb") as f:
-        return base64.b64encode(f.read()).decode()
-
-img_base64_logo = get_base64_img("logo.png")
-st.markdown(
-    f'<img src="data:image/png;base64,{img_base64_logo}" class="logo-footer" />',
-    unsafe_allow_html=True,
-)
