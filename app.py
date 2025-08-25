@@ -117,7 +117,13 @@ if st.button("Consultar") and query:
     for name, df in dfs.items():
         if not df.empty:
             context += f"\n===== {name.upper()} =====\n"
-            context += df.to_csv(index=False)
+            if name == "gerais":
+                # Cada linha da aba gerais como texto separado
+                for idx, row in df.iterrows():
+                    info_text = row.get("Informações", "")
+                    context += f"- {info_text}\n"
+            else:
+                context += df.to_csv(index=False)
 
     prompt = f"""
 Você é um assistente que responde baseado **apenas** nos dados abaixo.
