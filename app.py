@@ -19,22 +19,28 @@ def get_usd_brl_rate():
     except:
         return None
 
-# ===== Função corrigida de conversão =====
 def format_dollar_values(text, rate):
+    """
+    Corrige a conversão de valores em dólar para real.
+    Ex.: $0.008 -> R$ 0,04 se USD-BRL = 5.4
+    """
     if "$" not in text or rate is None:
         return text
 
-    money_regex = re.compile(r'\$\d+(?:[.,]\d+)?')
+    money_regex = re.compile(r'\$\d+(?:[.,]\d{0,3})*(?:[.,]\d+)?')
 
     def parse_money_str(s):
         s = s.strip().replace(" ", "")
         if s.startswith('$'):
             s = s[1:]
-        s = s.replace(',', '.')
+        s = s.replace(",", ".")
         try:
             return float(s)
         except:
             return None
+
+    def to_brazilian(n):
+        return f"{n:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
     def repl(m):
         orig = m.group(0)
@@ -42,16 +48,12 @@ def format_dollar_values(text, rate):
         if val is None:
             return orig
         converted = val * rate
-        usd_fmt = f"${val:.5f}"  # dólar com 5 casas decimais
-        brl_fmt = f"{converted:.4f}"  # real com 4 casas decimais
-        if float(brl_fmt) >= 1:
-            brl_fmt = f"{float(brl_fmt):,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
-        else:
-            brl_fmt = brl_fmt.replace('.', ',')
-        return f"{usd_fmt} (R$ {brl_fmt})"
+        brl = to_brazilian(converted)
+        return f"{orig} (R$ {brl})"
 
     formatted = money_regex.sub(repl, text)
-    formatted = formatted.strip() + "\n(valores sem impostos)"
+    formatted = formatted.strip()
+    formatted += "\n(valores sem impostos)"
     return formatted
 
 def inject_favicon():
@@ -147,7 +149,9 @@ def read_ws(name):
 
         rows = values[1:]
         df = pd.DataFrame(rows, columns=header)
+
         df = df[~df.apply(lambda row: all(cell.strip() == "" for cell in row), axis=1)]
+
         return df
 
     except Exception as e:
@@ -273,4 +277,31 @@ Responda de forma clara, sem citar a aba ou linha da planilha.
                             output_fmt = remove_drive_links(output_fmt)
                             st.markdown(
                                 f"<div style='text-align:center; margin-top:20px;'>{output_fmt.replace(chr(10),'<br/>')}</div>",
-                                unsafe_allow
+                                unsafe_allow_html=True,
+                            )
+                            show_drive_images_from_text(resp.text)
+                        except Exception as e:
+                            st.error(f"Erro ao chamar Gemini: {e}")
+            st.session_state.botao_texto = "Buscar"
+
+# ===== Rodapé e logo =====
+st.markdown(
+    """
+<style>
+.version-tag { position: fixed; bottom: 50px; right: 25px; font-size: 12px; color: white; opacity: 0.7; z-index: 100; }
+.logo-footer { position: fixed; bottom: 5px; left: 50%; transform: translateX(-50%); width: 120px; z-index: 100; }
+</style>
+<div class="version-tag">V1.0</div>
+""",
+    unsafe_allow_html=True,
+)
+
+def get_base64_img(path):
+    with open(path, "rb") as f:
+        return base64.b64encode(f.read()).decode()
+
+img_base64_logo = get_base64_img("logo.png")
+st.markdown(
+    f'<img src="data:image/png;base64,{img_base64_logo}" class="logo-footer" />',
+    unsafe_allow_html=True,
+)
