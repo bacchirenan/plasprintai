@@ -24,6 +24,46 @@ def format_dollar_values(text, rate):
     if "$" not in text or rate is None:
         return text
 
+    money_regex = re.compile(r'\$\d+(?:\.\d{1,6})?')
+
+    def parse_money_str(s):
+        s = s.strip().replace(" ", "")
+        if s.startswith('$'):
+            s = s[1:]
+        try:
+            return float(s)
+        except:
+            return None
+
+    def format_usd(n):
+        if n < 0.01:
+            return f"${n:.3f}"   # até 3 casas para valores muito pequenos
+        return f"${n:.2f}"
+
+    def format_brl(n):
+        if n < 1:
+            s = f"{n:,.4f}"     # 4 casas para valores menores que 1 real
+        else:
+            s = f"{n:,.2f}"
+        return s.replace(",", "X").replace(".", ",").replace("X", ".")
+
+    def repl(m):
+        orig = m.group(0)
+        val = parse_money_str(orig)
+        if val is None:
+            return orig
+        converted = val * rate
+        usd_fmt = format_usd(val)
+        brl_fmt = format_brl(converted)
+        return f"{usd_fmt} (R$ {brl_fmt})"
+
+    formatted = money_regex.sub(repl, text)
+    if not formatted.endswith("\n"):
+        formatted += "\n"
+    formatted += "(valores sem impostos)"
+    return formatted
+
+
     # Regex captura valores em dólar, inclusive decimais pequenos
     money_regex = re.compile(r'\$\d*\.\d+|\$\d+')
 
@@ -299,3 +339,4 @@ st.markdown(
     f'<img src="data:image/png;base64,{img_base64_logo}" class="logo-footer" />',
     unsafe_allow_html=True,
 )
+
