@@ -23,17 +23,17 @@ def format_dollar_values(text, rate):
     if "$" not in text or rate is None:
         return text
 
-    # Regex que captura o valor numérico imediatamente após o $
-    money_regex = re.compile(r'\$(\d+(?:\.\d+)?)')
+    # Regex que captura números decimais após o $
+    money_regex = re.compile(r'\$\s*(\d+[\.,]?\d*)')
 
     def repl(m):
         orig = m.group(0)
-        num_str = m.group(1)
+        num_str = m.group(1).replace(",", ".")  # garante ponto decimal
         try:
-            val = float(num_str)
-            converted = val * rate
+            val = float(num_str)                 # converte corretamente para float
+            converted = val * rate               # multiplicação correta
             brl = f"{converted:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-            return f"${val:.3f} (R$ {brl})"  # mostra o valor em dólar com 3 casas
+            return f"${val:.5f} (R$ {brl})"     # mostra 5 casas decimais para precisão
         except:
             return orig
 
@@ -290,6 +290,7 @@ st.markdown(
     f'<img src="data:image/png;base64,{img_base64_logo}" class="logo-footer" />',
     unsafe_allow_html=True,
 )
+
 
 
 
