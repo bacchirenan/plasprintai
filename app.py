@@ -19,63 +19,32 @@ def get_usd_brl_rate():
     except:
         return None
 
+# ===== Função corrigida de formatação de valores =====
 def format_dollar_values(text, rate):
-    """
-    Função robusta para encontrar valores em dólares no texto, converter para reais
-    e formatar:
-      - USD: se < 0.01 => 3 casas decimais, senão 2 casas
-      - BRL: se < 1 => 4 casas decimais, senão 2 casas
-    Corrige problemas de parsing e evita dígitos "sobrando" (ex.: '65' no final).
-    """
     if "$" not in text or rate is None:
         return text
 
-    # Regex simples que captura $ seguido de números e opcional decimal (qualquer tamanho)
+    # Regex que captura $ seguido de números, incluindo várias casas decimais
     money_regex = re.compile(r'\$\d+(?:[.,]\d+)?')
 
     def parse_money_str(s):
-        # s: string com o token encontrado (ex: "$0.00865" ou "$1.234,56")
         s = s.strip().replace(" ", "")
         if s.startswith('$'):
             s = s[1:]
-
-        # Normalizar: decidir separador decimal pelo último separador presente
-        # (se houver '.' e ',' usamos o que aparece por último como decimal)
-        if '.' in s and ',' in s:
-            if s.rfind(',') > s.rfind('.'):
-                # vírgula é decimal -> remove pontos (milhar) e troca vírgula por ponto
-                s = s.replace('.', '').replace(',', '.')
-            else:
-                # ponto é decimal -> remove vírgulas (milhar)
-                s = s.replace(',', '')
-        elif ',' in s:
-            # somente vírgulas presentes -> tratamos a vírgula como decimal,
-            # removendo possíveis pontos milhar (se existissem)
-            s = s.replace('.', '').replace(',', '.')
-        else:
-            # somente pontos ou somente dígitos
-            # se houver mais de 1 ponto, considerar o último como separador decimal
-            if s.count('.') > 1:
-                last = s.rfind('.')
-                integer_part = s[:last].replace('.', '')
-                frac_part = s[last+1:]
-                s = integer_part + '.' + frac_part
-            # caso haja 0 ou 1 ponto, deixamos como está (mantemos o ponto decimal)
+        s = s.replace(',', '.')
         try:
             return float(s)
         except:
             return None
 
     def format_usd(n):
-        # USD: valores muito pequenos (<0.01) com 3 casas, senão 2 casas
-        if n < 0.01:
-            return f"${n:.3f}"
-        return f"${n:.2f}"
+        # valores muito pequenos <0.01 -> 5 casas decimais
+        return f"${n:.5f}".rstrip('0').rstrip('.') if n < 0.01 else f"${n:.2f}"
 
     def format_brl(n):
-        # BRL: <1 -> 4 casas; >=1 -> 2 casas; converte para formato BR (milhar='.', dec=',')
+        # BRL: valores muito pequenos <1 -> 4 casas decimais
         if n < 1:
-            s = f"{n:,.4f}"
+            s = f"{n:.4f}"
         else:
             s = f"{n:,.2f}"
         return s.replace(",", "X").replace(".", ",").replace("X", ".")
@@ -91,8 +60,7 @@ def format_dollar_values(text, rate):
         return f"{usd_fmt} (R$ {brl_fmt})"
 
     formatted = money_regex.sub(repl, text)
-    formatted = formatted.strip()
-    formatted += "\n(valores sem impostos)"
+    formatted = formatted.strip() + "\n(valores sem impostos)"
     return formatted
 
 def inject_favicon():
@@ -210,7 +178,6 @@ st.sidebar.write("trabalhos:", len(trabalhos_df))
 st.sidebar.write("dacen:", len(dacen_df))
 st.sidebar.write("psi:", len(psi_df))
 
-# 🔄 Botão para atualizar planilhas manualmente
 if st.sidebar.button("🔄 Atualizar planilhas"):
     st.cache_data.clear()
     st.rerun()
@@ -333,17 +300,4 @@ st.markdown(
 .logo-footer { position: fixed; bottom: 5px; left: 50%; transform: translateX(-50%); width: 120px; z-index: 100; }
 </style>
 <div class="version-tag">V1.0</div>
-""",
-    unsafe_allow_html=True,
-)
-
-def get_base64_img(path):
-    with open(path, "rb") as f:
-        return base64.b64encode(f.read()).decode()
-
-img_base64_logo = get_base64_img("logo.png")
-st.markdown(
-    f'<img src="data:image/png;base64,{img_base64_logo}" class="logo-footer" />',
-    unsafe_allow_html=True,
-)
 
