@@ -23,13 +23,16 @@ def format_dollar_values(text, rate):
     if "$" not in text or rate is None:
         return text
 
-    # Regex para capturar valores em dólar
+    import re
+
+    # Captura valores em dólar como $0.082 ou $0.008
     money_regex = re.compile(r'\$(\d*\.?\d+)')
 
     def repl(m):
-        val_usd = float(m.group(1))  # valor em dólar
-        val_brl = val_usd * rate      # valor em reais
-        val_usd_fmt = f"${val_usd:.5f}"  # formato dólar
+        val_usd = float(m.group(1))             # valor em dólar
+        val_brl = val_usd * rate                # valor em reais
+        # Formata dólar com 5 casas decimais e real com 2 casas
+        val_usd_fmt = f"${val_usd:.5f}"
         val_brl_fmt = f"R$ {val_brl:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
         return f"{val_usd_fmt} ({val_brl_fmt})"
 
@@ -286,6 +289,7 @@ st.markdown(
     f'<img src="data:image/png;base64,{img_base64_logo}" class="logo-footer" />',
     unsafe_allow_html=True,
 )
+
 
 
 
