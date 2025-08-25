@@ -19,7 +19,37 @@ def get_usd_brl_rate():
     except:
         return None
 
+def _normalize_text(s: str) -> str:
+    """Normaliza texto para comparação (sem acento, minúsculo, 1 espaço)."""
+    if s is None:
+        return ""
+    s = unicodedata.normalize("NFKD", s)
+    s = "".join(ch for ch in s if not unicodedata.combining(ch))
+    s = re.sub(r"\s+", " ", s).strip().lower()
+    return s
+
+def resolve_ws_title(sh, preferred_name: str) -> str:
+    """
+    Encontra o título real da worksheet ignorando acentos/caixa.
+    Ex.: 'informações gerais' -> 'Informações Gerais'
+    """
+    target = _normalize_text(preferred_name)
+    titles = { _normalize_text(ws.title): ws.title for ws in sh.worksheets() }
+    if target in titles:
+        return titles[target]
+    # fallback: contém
+    for norm, real in titles.items():
+        if target in norm:
+            return real
+    # se não achar, retorna o próprio nome (para manter comportamento anterior)
+    return preferred_name
+
 def format_dollar_values(text, rate):
+    """
+    Converte valores em USD presentes no texto para BRL, mantendo o original.
+    Corrige interpretação de separadores (., ,) para evitar erros como
+    $0.794 -> R$ 4.302,13.
+    """
     if "$" not in text or rate is None:
         return text
 
@@ -29,10 +59,38 @@ def format_dollar_values(text, rate):
         s = s.strip().replace(" ", "")
         if s.startswith('$'):
             s = s[1:]
-        # Normaliza separadores
-        s = s.replace(".", "").replace(",", ".")
+
+        # Casos com os dois separadores (ex.: 1.234,56 ou 1,234.56)
+        if '.' in s and ',' in s:
+            last_dot = s.rfind('.')
+            last_comma = s.rfind(',')
+            if last_dot > last_comma:
+                # Padrão US: vírgulas são milhar, ponto é decimal
+                s_clean = s.replace(',', '')
+            else:
+                # Padrão BR: pontos são milhar, vírgula é decimal
+                s_clean = s.replace('.', '').replace(',', '.')
+        elif ',' in s:
+            # Só vírgula: decide se é decimal pela quantidade após a última vírgula
+            frac_len = len(s.split(',')[-1])
+            if 1 <= frac_len <= 3:  # permite 0,008 / 0,79 / 12,345
+                s_clean = s.replace('.', '').replace(',', '.')
+            else:
+                # provavelmente milhar (ex.: 1,234,567)
+                s_clean = s.replace(',', '')
+        elif '.' in s:
+            # Só ponto: decide se é milhar pelo padrão ###.###.###
+            parts = s.split('.')
+            if len(parts) > 1 and all(len(p) == 3 for p in parts[1:]) and 1 <= len(parts[0]) <= 3:
+                s_clean = s.replace('.', '')
+            else:
+                # ponto decimal comum
+                s_clean = s
+        else:
+            s_clean = s
+
         try:
-            return float(s)
+            return float(s_clean)
         except:
             return None
 
@@ -161,7 +219,10 @@ erros_df = read_ws("erros")
 trabalhos_df = read_ws("trabalhos")
 dacen_df = read_ws("dacen")
 psi_df = read_ws("psi")
-informacoes_df = read_ws("informações gerais")  # 🔹 nova aba
+
+# 🔹 Resolve e carrega a aba 'informações gerais' de forma tolerante a acentos/caixa
+info_title = resolve_ws_title(sh, "informações gerais")
+informacoes_df = read_ws(info_title)
 
 # ===== Sidebar =====
 st.sidebar.header("Dados carregados")
@@ -169,7 +230,7 @@ st.sidebar.write("erros:", len(erros_df))
 st.sidebar.write("trabalhos:", len(trabalhos_df))
 st.sidebar.write("dacen:", len(dacen_df))
 st.sidebar.write("psi:", len(psi_df))
-st.sidebar.write("informações gerais:", len(informacoes_df))  # 🔹 mostra quantidade
+st.sidebar.write(f"{info_title}:", len(informacoes_df))  # exibe o nome real da aba
 
 # 🔄 Botão para atualizar planilhas manualmente
 if st.sidebar.button("🔄 Atualizar planilhas"):
@@ -253,7 +314,7 @@ with col_meio:
                         "trabalhos": trabalhos_df,
                         "dacen": dacen_df,
                         "psi": psi_df,
-                        "informações gerais": informacoes_df,  # 🔹 incluído no contexto
+                        info_title: informacoes_df,  # 🔹 incluído no contexto com o nome real
                     }
                     filtered_dfs = search_relevant_rows(dfs, max_per_sheet=200)
 
