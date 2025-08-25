@@ -19,22 +19,25 @@ def get_usd_brl_rate():
     except:
         return None
 
-def format_dollar_values(text, rate):
+def format_dollar_values(text, rate, quantity=1):
+    """
+    Converte valores em dólar no texto para reais corretamente, multiplicando
+    pelo número de unidades (quantity) e aplicando o câmbio.
+    """
     if "$" not in text or rate is None:
         return text
 
-    import re
-
-    # Captura valores em dólar como $0.082 ou $0.008
-    money_regex = re.compile(r'\$(\d*\.?\d+)')
+    money_regex = re.compile(r'\$(\d*\.\d+|\d+)')
 
     def repl(m):
-        val_usd = float(m.group(1))             # valor em dólar
-        val_brl = val_usd * rate                # valor em reais
-        # Formata dólar com 5 casas decimais e real com 2 casas
-        val_usd_fmt = f"${val_usd:.5f}"
-        val_brl_fmt = f"R$ {val_brl:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-        return f"{val_usd_fmt} ({val_brl_fmt})"
+        orig = m.group(0)  # ex: $0.008
+        val = float(m.group(1))  # captura o valor numérico
+        val_total = val * quantity  # multiplica pela quantidade de garrafas
+        val_brl = val_total * rate  # converte para real
+        # Formata os valores
+        val_usd_str = f"{val_total:.3f}" if val_total < 1 else f"{val_total:.2f}"
+        val_brl_str = f"{val_brl:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+        return f"${val_usd_str} (R$ {val_brl_str})"
 
     formatted = money_regex.sub(repl, text)
     formatted += "\n(valores sem impostos)"
@@ -257,7 +260,9 @@ Responda de forma clara, sem citar a aba ou linha da planilha.
 """
                         try:
                             resp = client.models.generate_content(model="gemini-2.5-flash", contents=prompt)
-                            output_fmt = format_dollar_values(resp.text, rate)
+                            # Aqui informamos a quantidade de garrafas (ex: 10)
+                            quantity = 10  # Ajuste dinamicamente se quiser pelo input do usuário
+                            output_fmt = format_dollar_values(resp.text, rate, quantity)
                             output_fmt = remove_drive_links(output_fmt)
                             st.markdown(
                                 f"<div style='text-align:center; margin-top:20px;'>{output_fmt.replace(chr(10),'<br/>')}</div>",
@@ -289,13 +294,3 @@ st.markdown(
     f'<img src="data:image/png;base64,{img_base64_logo}" class="logo-footer" />',
     unsafe_allow_html=True,
 )
-
-
-
-
-
-
-
-
-
-
