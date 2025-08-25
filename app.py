@@ -19,19 +19,18 @@ def get_usd_brl_rate():
     except:
         return None
 
-def format_dollar_values(text, rate, quantidade=1):
+def format_dollar_values(text, rate, quantity=1):
     """
-    Converte valores em dólar dentro do texto para reais, multiplicando pelo câmbio e pela quantidade.
-    Mantém o valor original em dólar no texto.
+    Corrige a conversão de dólar para real, multiplicando pelo número de garrafas
+    e exibindo o valor corretamente.
     """
     if "$" not in text or rate is None:
         return text
 
-    # Regex que captura valores em dólar incluindo decimais
-    money_regex = re.compile(r'\$\d*\.?\d+')
+    # Regex para capturar valores em dólar com casas decimais
+    money_regex = re.compile(r'\$\d+(?:\.\d+)?')
 
     def parse_money_str(s):
-        """Extrai o número do formato $0.008 ou $12.34"""
         s = s.strip().replace(" ", "")
         if s.startswith('$'):
             s = s[1:]
@@ -41,7 +40,7 @@ def format_dollar_values(text, rate, quantidade=1):
             return None
 
     def to_brazilian(n):
-        """Formata número como moeda brasileira"""
+        # Formata número com 2 casas decimais e vírgula
         return f"{n:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
     def repl(m):
@@ -49,9 +48,8 @@ def format_dollar_values(text, rate, quantidade=1):
         val = parse_money_str(orig)
         if val is None:
             return orig
-        # Multiplica pelo número de unidades
-        val_total = val * quantidade
-        converted = val_total * rate
+        # Multiplica pelo número de garrafas e pela cotação
+        converted = val * rate * quantity
         brl = to_brazilian(converted)
         return f"{orig} (R$ {brl})"
 
@@ -250,6 +248,9 @@ with col_meio:
                 if rate is None:
                     st.error("Não foi possível obter a cotação do dólar.")
                 else:
+                    # Aqui você pode informar a quantidade de garrafas, exemplo 10
+                    quantidade_garrafas = 10
+
                     dfs = {"erros": erros_df, "trabalhos": trabalhos_df, "dacen": dacen_df, "psi": psi_df}
                     filtered_dfs = search_relevant_rows(dfs, max_per_sheet=200)
 
@@ -276,10 +277,8 @@ Pergunta:
 Responda de forma clara, sem citar a aba ou linha da planilha.
 """
                         try:
-                            # Aqui você pode definir a quantidade de garrafas
-                            quantidade_garrafas = 10  # exemplo
                             resp = client.models.generate_content(model="gemini-2.5-flash", contents=prompt)
-                            output_fmt = format_dollar_values(resp.text, rate, quantidade=quantidade_garrafas)
+                            output_fmt = format_dollar_values(resp.text, rate, quantity=quantidade_garrafas)
                             output_fmt = remove_drive_links(output_fmt)
                             st.markdown(
                                 f"<div style='text-align:center; margin-top:20px;'>{output_fmt.replace(chr(10),'<br/>')}</div>",
