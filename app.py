@@ -9,7 +9,7 @@ from google import genai
 st.set_page_config(page_title="PlasPrint IA", page_icon="favicon.ico", layout="wide")
 
 # ===== Funções auxiliares =====
-@st.cache_data(ttl=300)  # Cache por 5 minutos
+@st.cache_data(ttl=300)
 def get_usd_brl_rate():
     try:
         res = requests.get("https://economia.awesomeapi.com.br/json/last/USD-BRL")
@@ -24,20 +24,18 @@ def format_dollar_values(text, rate):
 
     money_regex = re.compile(r'\$\s?\d+(?:[.,]\d+)?')
 
-    # 🔹 Função corrigida para interpretar corretamente valores pequenos
     def parse_money_str(s):
         s = s.strip()
         if s.startswith('$'):
             s = s[1:]
         s = s.replace(" ", "")
-        s = s.replace(",", ".")  # sempre ponto como decimal
+        s = s.replace(",", ".")
         try:
             return float(s)
         except:
             return None
 
     def to_brazilian(n):
-        # 🔹 Mínimo R$ 0,01 para valores muito pequenos
         if 0 < n < 0.01:
             n = 0.01
         return f"{n:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
@@ -58,9 +56,8 @@ def format_dollar_values(text, rate):
     return formatted
 
 def inject_favicon():
-    favicon_path = "favicon.ico"
     try:
-        with open(favicon_path, "rb") as f:
+        with open("favicon.ico", "rb") as f:
             data = base64.b64encode(f.read()).decode()
         st.markdown(f'<link rel="icon" href="data:image/x-icon;base64,{data}" type="image/x-icon" />', unsafe_allow_html=True)
     except:
@@ -112,7 +109,7 @@ div.stTextInput > div > input {{
 </style>
 """, unsafe_allow_html=True)
 
-# ===== Carregar segredos =====
+# ===== Segredos =====
 try:
     GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
     SHEET_ID = st.secrets["SHEET_ID"]
@@ -131,7 +128,7 @@ except Exception as e:
     st.error(f"Não consegui abrir a planilha: {e}")
     st.stop()
 
-# ===== Carregar DataFrames com cache =====
+# ===== Carregar DataFrames =====
 @st.cache_data
 def read_ws(name):
     try:
@@ -161,7 +158,7 @@ def build_context(dfs, max_chars=15000):
         if df.empty:
             continue
         parts.append(f"--- {name} ---")
-        for r in df.head(50).to_dict(orient="records"):  # só 50 linhas por aba
+        for r in df.head(50).to_dict(orient="records"):
             row_items = [f"{k}: {v}" for k,v in r.items() if v is not None and str(v).strip() != '']
             parts.append(" | ".join(row_items))
     context = "\n".join(parts)
