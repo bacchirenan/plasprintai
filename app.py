@@ -24,7 +24,7 @@ def format_dollar_values(text, rate):
 
     money_regex = re.compile(r'\$\d{1,3}(?:[.,]\d{3})*(?:[.,]\d+)?')
 
-    # 🔹 Função corrigida
+    # 🔹 Função corrigida para não confundir 0.008 com 8
     def parse_money_str(s):
         s = s.strip()
         if s.startswith('$'):
@@ -35,8 +35,12 @@ def format_dollar_values(text, rate):
         except:
             return None
 
+    # 🔹 Formatação adaptada para até 4 casas decimais em valores muito pequenos
     def to_brazilian(n):
-        s = f"{n:,.2f}"
+        if n < 0.01:
+            s = f"{n:,.4f}"  # até 4 casas decimais
+        else:
+            s = f"{n:,.2f}"
         s = s.replace(',', 'X').replace('.', ',').replace('X', '.')
         return s
 
