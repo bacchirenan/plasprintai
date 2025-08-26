@@ -48,10 +48,7 @@ def format_dollar_values(text, rate):
 
     # 🔹 Formatação com até 4 casas decimais para valores muito pequenos
     def to_brazilian(n):
-        if n < 0.01 and n > 0:
-            s = f"{n:,.4f}"
-        else:
-            s = f"{n:,.2f}"
+        s = f"{n:,.2f}"  # padrão 2 casas
         s = s.replace(',', 'X').replace('.', ',').replace('X', '.')
         return s
 
@@ -265,4 +262,6 @@ st.markdown("""
 
 def get_base64_img(path):
     with open(path, "rb") as f:
-        return base64.b64encode(f.read
+        return base64.b64encode(f.read()).decode()
+img_base64_logo = get_base64_img("logo.png")
+st.markdown(f'<img src="data:image/png;base64,{img_base64_logo}" class="logo-footer" />', unsafe_allow_html=True)
