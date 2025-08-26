@@ -30,7 +30,7 @@ def parse_money_str(s):
 
 def to_brazilian(n):
     if 0 < n < 0.01:
-        n = 0.01
+        n = 0.01  # valor mínimo para evitar 0.00
     return f"{n:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 def extract_dollar_values(text):
@@ -39,7 +39,6 @@ def extract_dollar_values(text):
 
 def format_dollar_values(text, rate):
     money_regex = re.compile(r'\$\s?\d+(?:[.,]\d+)?')
-
     def repl(m):
         orig = m.group(0)
         val = parse_money_str(orig)
@@ -48,7 +47,6 @@ def format_dollar_values(text, rate):
         converted = val * rate
         brl = to_brazilian(converted)
         return f"{orig} (R$ {brl})"
-
     formatted = money_regex.sub(repl, text)
     if not formatted.endswith("\n"):
         formatted += "\n"
@@ -189,7 +187,6 @@ def remove_drive_links(text):
 # ===== Layout principal =====
 col_esq, col_meio, col_dir = st.columns([1,2,1])
 with col_meio:
-    st.markdown("<p class='custom-font'>olá</p>", unsafe_allow_html=True)
     st.markdown("<h1 class='custom-font'>PlasPrint IA</h1><br>", unsafe_allow_html=True)
     st.markdown("<p class='custom-font'>Qual a sua dúvida?</p>", unsafe_allow_html=True)
     pergunta = st.text_input("", key="central_input", label_visibility="collapsed")
@@ -259,5 +256,6 @@ st.markdown("""
 def get_base64_img(path):
     with open(path, "rb") as f:
         return base64.b64encode(f.read()).decode()
+
 img_base64_logo = get_base64_img("logo.png")
 st.markdown(f'<img src="data:image/png;base64,{img_base64_logo}" class="logo-footer" />', unsafe_allow_html=True)
