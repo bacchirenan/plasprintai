@@ -1,268 +1,115 @@
+# ===== Importações =====
 import streamlit as st
 import pandas as pd
-import json, base64, os, re, requests, io
+import json, base64, os
 import gspread
 from google.oauth2.service_account import Credentials
-from google import genai
+import unicodedata  # 🔹 para remover acentos
 
 # ===== Configuração da página =====
-st.set_page_config(page_title="PlasPrint IA", page_icon="favicon.ico", layout="wide")
+st.set_page_config(
+    page_title="PlasPrint IA",   # Título da aba do navegador
+    page_icon="🖨️",              # Ícone da aba
+    layout="wide"                # Layout em tela cheia
+)
 
-# ===== Funções auxiliares =====
-@st.cache_data(ttl=300)
-def get_usd_brl_rate():
-    try:
-        res = requests.get("https://economia.awesomeapi.com.br/json/last/USD-BRL")
-        data = res.json()
-        rate = float(data["USDBRL"]["ask"])
-        return rate
-    except Exception as e:
-        st.error(f"Erro ao buscar cotação do dólar: {e}")
-        return None
+# ===== Função para remover acentos de textos =====
+def normalize(text):
+    """
+    Remove acentos e normaliza textos para facilitar buscas.
+    """
+    if not isinstance(text, str):
+        return ""
+    return unicodedata.normalize("NFKD", text).encode("ASCII", "ignore").decode("utf-8").lower()
 
-def parse_money_str(s):
-    s = s.strip()
-    if s.startswith('$'):
-        s = s[1:]
-    s = s.replace(" ", "").replace(",", ".")
-    try:
-        return float(s)
-    except:
-        return None
+# ===== Conectar ao Google Sheets =====
+def connect_gsheet():
+    """
+    Faz a autenticação com o Google Sheets usando a chave de serviço 
+    armazenada na variável de ambiente SERVICE_ACCOUNT_B64.
+    """
+    service_account_info = json.loads(base64.b64decode(os.environ["SERVICE_ACCOUNT_B64"]))
+    creds = Credentials.from_service_account_info(
+        service_account_info, 
+        scopes=["https://www.googleapis.com/auth/spreadsheets"]
+    )
+    client = gspread.authorize(creds)
+    sheet = client.open_by_key(os.environ["SHEET_ID"])  # abre planilha pelo ID
+    return sheet
 
-def to_brazilian(n):
-    if 0 < n < 0.01:
-        n = 0.01  # mínimo para evitar 0.00
-    return f"{n:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-
-def format_dollar_values(text, rate):
-    money_regex = re.compile(r'\$\s?\d+(?:[.,]\d+)?')
-    def repl(m):
-        orig = m.group(0)
-        val = parse_money_str(orig)
-        if val is None or rate is None:
-            return orig
-        converted = val * float(rate)
-        brl = to_brazilian(converted)
-        return f"{orig} (R$ {brl})"
-    formatted = money_regex.sub(repl, text)
-    if not formatted.endswith("\n"):
-        formatted += "\n"
-    formatted += "(valores sem impostos)"
-    return formatted
-
-def inject_favicon():
-    try:
-        with open("favicon.ico", "rb") as f:
-            data = base64.b64encode(f.read()).decode()
-        st.markdown(f'<link rel="icon" href="data:image/x-icon;base64,{data}" type="image/x-icon" />', unsafe_allow_html=True)
-    except:
-        pass
-inject_favicon()
-
-def get_base64_of_jpg(image_path):
-    with open(image_path, "rb") as img_file:
-        return base64.b64encode(img_file.read()).decode()
-
-def get_base64_font(path):
-    with open(path, "rb") as f:
-        return base64.b64encode(f.read()).decode()
-
-# ===== Carregar background e fonte =====
-background_image = "background.jpg"
-img_base64 = get_base64_of_jpg(background_image)
-font_base64 = get_base64_font("font.ttf")
-
-st.markdown(f"""
-<style>
-@font-face {{
-    font-family: 'CustomFont';
-    src: url(data:font/ttf;base64,{font_base64}) format('truetype');
-}}
-h1.custom-font {{
-    font-family: 'CustomFont', sans-serif !important;
-    text-align: center;
-    font-size: 380%;
-}}
-p.custom-font {{
-    font-family: 'CustomFont', sans-serif !important;
-    font-weight: bold;
-    text-align: left;
-}}
-div.stButton > button {{
-    font-family: 'CustomFont', sans-serif !important;
-}}
-div.stTextInput > div > input {{
-    font-family: 'CustomFont', sans-serif !important;
-}}
-.stApp {{
-    background-image: url("data:image/jpg;base64,{img_base64}");
-    background-size: cover;
-    background-position: center;
-    background-repeat: no-repeat;
-    background-attachment: fixed;
-}}
-</style>
-""", unsafe_allow_html=True)
-
-# ===== Segredos =====
-try:
-    GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
-    SHEET_ID = st.secrets["SHEET_ID"]
-    SERVICE_ACCOUNT_B64 = st.secrets["SERVICE_ACCOUNT_B64"]
-except:
-    st.error("Configure os segredos GEMINI_API_KEY, SHEET_ID e SERVICE_ACCOUNT_B64.")
-    st.stop()
-
-sa_json = json.loads(base64.b64decode(SERVICE_ACCOUNT_B64).decode())
-scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
-creds = Credentials.from_service_account_info(sa_json, scopes=scopes)
-gc = gspread.authorize(creds)
-
-try:
-    sh = gc.open_by_key(SHEET_ID)
-except Exception as e:
-    st.error(f"Não consegui abrir a planilha: {e}")
-    st.stop()
-
-# ===== Função para ler abas =====
+# ===== Ler aba da planilha =====
 @st.cache_data
-def read_ws(name):
-    try:
-        ws = sh.worksheet(name)
-        return pd.DataFrame(ws.get_all_records())
-    except Exception as e:
-        st.warning(f"A aba '{name}' não pôde ser carregada: {e}")
-        return pd.DataFrame()
+def read_ws(ws_name):
+    """
+    Lê os dados de uma aba (worksheet) da planilha e retorna como DataFrame.
+    Os dados são cacheados para evitar recarregamento constante.
+    """
+    sheet = connect_gsheet()
+    ws = sheet.worksheet(ws_name)
+    data = ws.get_all_records()
+    return pd.DataFrame(data)
 
+# ===== Atualizar todos os dados =====
 def refresh_data():
-    st.session_state.erros_df = read_ws("erros")
-    st.session_state.trabalhos_df = read_ws("trabalhos")
-    st.session_state.dacen_df = read_ws("dacen")
-    st.session_state.psi_df = read_ws("psi")
-    st.session_state.gerais_df = read_ws("gerais")
+    """
+    Atualiza e recarrega todas as abas da planilha no cache.
+    """
+    st.cache_data.clear()
+    global erros_df, trabalhos_df, dacen_df, psi_df, gerais_df
+    erros_df = read_ws("erros")
+    trabalhos_df = read_ws("trabalhos")
+    dacen_df = read_ws("dacen")
+    psi_df = read_ws("psi")
+    gerais_df = read_ws("gerais")
 
-# ===== Inicializar DataFrames =====
-if "erros_df" not in st.session_state:
+# ===== Carregar dados na inicialização =====
+try:
     refresh_data()
+except Exception as e:
+    st.error("⚠️ Erro ao carregar dados da planilha. Verifique as credenciais e o ID da planilha.")
+    st.stop()
 
-# ===== Sidebar: atualizar planilha =====
-st.sidebar.header("Dados carregados")
-st.sidebar.write("erros:", len(st.session_state.erros_df))
-st.sidebar.write("trabalhos:", len(st.session_state.trabalhos_df))
-st.sidebar.write("dacen:", len(st.session_state.dacen_df))
-st.sidebar.write("psi:", len(st.session_state.psi_df))
-st.sidebar.write("gerais:", len(st.session_state.gerais_df))
+# ===== Barra lateral com menu =====
+st.sidebar.title("📌 Menu")
+menu = st.sidebar.radio(
+    "Escolha uma aba:", 
+    ["Erros", "Trabalhos", "DACEN", "PSI", "Gerais"]
+)
 
-if st.sidebar.button("Atualizar planilha"):
+# ===== Botão para atualizar planilha =====
+st.sidebar.markdown("---")  # separador visual
+if st.sidebar.button("🔄 Atualizar planilha"):
     refresh_data()
-    st.experimental_rerun()
+    st.sidebar.success("✅ Planilhas atualizadas com sucesso!")
+    st.rerun()  # 🔹 reinicia a execução do app (compatível com Streamlit Cloud)
 
-# ===== Cliente Gemini =====
-os.environ["GEMINI_API_KEY"] = GEMINI_API_KEY
-client = genai.Client()
+# ===== Exibição de cada aba =====
+if menu == "Erros":
+    st.header("❌ Lista de Erros")
+    st.dataframe(erros_df)
 
-def build_context(dfs, max_chars=15000):
-    parts = []
-    for name, df in dfs.items():
-        if df.empty:
-            continue
-        parts.append(f"--- {name} ---")
-        for r in df.head(50).to_dict(orient="records"):
-            row_items = [f"{k}: {v}" for k,v in r.items() if v is not None and str(v).strip() != '']
-            parts.append(" | ".join(row_items))
-    context = "\n".join(parts)
-    if len(context) > max_chars:
-        context = context[:max_chars] + "\n...[CONTEXTO TRUNCADO]"
-    return context
+elif menu == "Trabalhos":
+    st.header("📂 Trabalhos")
+    st.dataframe(trabalhos_df)
 
-# ===== Cache de imagens do Drive =====
-@st.cache_data
-def load_drive_image(file_id):
-    url = f"https://drive.google.com/uc?export=view&id={file_id}"
-    res = requests.get(url)
-    res.raise_for_status()
-    return res.content
+elif menu == "DACEN":
+    st.header("📊 DACEN")
+    st.dataframe(dacen_df)
 
-def show_drive_images_from_text(text):
-    drive_links = re.findall(r'https?://drive\.google\.com/file/d/([a-zA-Z0-9_-]+)[^/]*/view', text)
-    for file_id in drive_links:
-        try:
-            img_bytes = io.BytesIO(load_drive_image(file_id))
-            st.image(img_bytes, use_container_width=True)
-        except:
-            st.warning(f"Não foi possível carregar a imagem do Drive: {file_id}")
+elif menu == "PSI":
+    st.header("🧾 PSI")
+    st.dataframe(psi_df)
 
-def remove_drive_links(text):
-    return re.sub(r'https?://drive\.google\.com/file/d/[a-zA-Z0-9_-]+/view\?usp=drive_link', '', text)
+elif menu == "Gerais":
+    st.header("ℹ️ Informações Gerais")
+    # Mostra cada linha da aba "Gerais" com coluna de texto e coluna de imagem
+    for _, row in gerais_df.iterrows():
+        col1, col2 = st.columns([2, 1])  # duas colunas (texto maior que imagem)
+        with col1:
+            st.markdown(f"**{row['Informações']}**")
+        with col2:
+            if row.get("Imagem"):  # verifica se existe imagem
+                st.image(row["Imagem"], use_container_width=True)
 
-# ===== Layout principal =====
-col_esq, col_meio, col_dir = st.columns([1,2,1])
-with col_meio:
-    st.markdown("<h1 class='custom-font'>PlasPrint IA</h1><br>", unsafe_allow_html=True)
-    st.markdown("<p class='custom-font'>Qual a sua dúvida?</p>", unsafe_allow_html=True)
-    pergunta = st.text_input("", key="central_input", label_visibility="collapsed")
-
-    if "botao_texto" not in st.session_state:
-        st.session_state.botao_texto = "Buscar"
-
-    buscar = st.button(st.session_state.botao_texto, use_container_width=True)
-
-    if buscar:
-        if not pergunta.strip():
-            st.warning("Digite uma pergunta.")
-        else:
-            st.session_state.botao_texto = "Aguarde"
-            with st.spinner("Processando resposta..."):
-                rate = get_usd_brl_rate()
-                if rate is None:
-                    st.error("Não foi possível obter a cotação do dólar.")
-                else:
-                    dfs = {
-                        "erros": st.session_state.erros_df,
-                        "trabalhos": st.session_state.trabalhos_df,
-                        "dacen": st.session_state.dacen_df,
-                        "psi": st.session_state.psi_df,
-                        "gerais": st.session_state.gerais_df
-                    }
-                    context = build_context(dfs)
-                    prompt = f"""
-Você é um assistente técnico que responde em português.
-Baseie-se **apenas** nos dados abaixo (planilhas). 
-Responda de forma objetiva, sem citar de onde veio a informação ou a fonte.
-Se houver links de imagens, inclua-os no final.
-
-Dados:
-{context}
-
-Pergunta:
-{pergunta}
-
-Responda de forma clara, sem citar a aba ou linha da planilha.
-"""
-                    try:
-                        resp = client.models.generate_content(model="gemini-2.5-flash", contents=prompt)
-                        output_fmt = format_dollar_values(resp.text, rate)
-                        output_fmt = remove_drive_links(output_fmt)
-                        st.markdown(f"<div style='text-align:center; margin-top:20px;'>{output_fmt.replace(chr(10),'<br/>')}</div>", unsafe_allow_html=True)
-                        show_drive_images_from_text(resp.text)
-                    except Exception as e:
-                        st.error(f"Erro ao chamar Gemini: {e}")
-            st.session_state.botao_texto = "Buscar"
-
-# ===== Rodapé e logo =====
-st.markdown("""
-<style>
-.version-tag { position: fixed; bottom: 50px; right: 25px; font-size: 12px; color: white; opacity: 0.7; z-index: 100; }
-.logo-footer { position: fixed; bottom: 5px; left: 50%; transform: translateX(-50%); width: 120px; z-index: 100; }
-</style>
-<div class="version-tag">V1.0</div>
-""", unsafe_allow_html=True)
-
-def get_base64_img(path):
-    with open(path, "rb") as f:
-        return base64.b64encode(f.read()).decode()
-
-img_base64_logo = get_base64_img("logo.png")
-st.markdown(f'<img src="data:image/png;base64,{img_base64_logo}" class="logo-footer" />', unsafe_allow_html=True)
-
+# ===== Campo de dúvidas no final =====
+st.markdown("<p class='custom-font'>Qual a sua dúvida?</p>", unsafe_allow_html=True)
