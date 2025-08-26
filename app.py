@@ -4,13 +4,12 @@ import json, base64, os, re, requests, io
 import gspread
 from google.oauth2.service_account import Credentials
 from google import genai
-import unicodedata  # 🔹 para remover acentos
 
 # ===== Configuração da página =====
 st.set_page_config(page_title="PlasPrint IA", page_icon="favicon.ico", layout="wide")
 
 # ===== Funções auxiliares =====
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=300)  # Cache por 5 minutos
 def get_usd_brl_rate():
     try:
         res = requests.get("https://economia.awesomeapi.com.br/json/last/USD-BRL")
@@ -19,41 +18,61 @@ def get_usd_brl_rate():
     except:
         return None
 
-def format_dollar_values_detailed(text, rate, quantity=1):
-    """
-    Corrige valores em dólar para real, incluindo detalhamento por cor
-    e multiplicando corretamente pelo número de garrafas.
-    """
+def format_dollar_values(text, rate):
     if "$" not in text or rate is None:
         return text
 
-    money_regex = re.compile(r'\$\d+(?:\.\d+)?')
+    money_regex = re.compile(r'\$\d{1,3}(?:[.,]\d{3})*(?:[.,]\d+)?')
 
     def parse_money_str(s):
-        s = s.strip().replace(" ", "")
+        s = s.strip()
         if s.startswith('$'):
             s = s[1:]
+        s = s.replace(" ", "")
+        if '.' in s and ',' in s:
+            if s.rfind(',') > s.rfind('.'):
+                dec, thou = ',', '.'
+            else:
+                dec, thou = '.', ','
+            s_clean = s.replace(thou, '').replace(dec, '.')
+        elif ',' in s:
+            last = s.rsplit(',', 1)[-1]
+            if 1 <= len(last) <= 2:
+                s_clean = s.replace('.', '').replace(',', '.')
+            else:
+                s_clean = s.replace(',', '')
+        elif '.' in s:
+            last = s.rsplit('.', 1)[-1]
+            if 1 <= len(last) <= 2:
+                s_clean = s
+            else:
+                s_clean = s.replace('.', '')
+        else:
+            s_clean = s
         try:
-            return float(s)
+            return float(s_clean)
         except:
             return None
 
     def to_brazilian(n):
-        return f"{n:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+        s = f"{n:,.2f}"
+        s = s.replace(',', 'X').replace('.', ',').replace('X', '.')
+        return s
 
     def repl(m):
         orig = m.group(0)
         val = parse_money_str(orig)
         if val is None:
             return orig
-        # Multiplica pelo número de garrafas e pela cotação
-        converted = val * rate * quantity
+        converted = val * rate
         brl = to_brazilian(converted)
         return f"{orig} (R$ {brl})"
 
     formatted = money_regex.sub(repl, text)
-    formatted = formatted.strip()
-    formatted += "\n(valores sem impostos)"
+
+    if not formatted.endswith("\n"):
+        formatted += "\n"
+    formatted += "(valores sem impostos)"
     return formatted
 
 def inject_favicon():
@@ -135,20 +154,8 @@ except Exception as e:
 def read_ws(name):
     try:
         ws = sh.worksheet(name)
-        values = ws.get_all_values()
-        if not values:
-            return pd.DataFrame()
-        max_len = max(len(r) for r in values)
-        values = [r + [""] * (max_len - len(r)) for r in values]
-        header = values[0]
-        if len(header) < max_len:
-            header += [f"col_{i}" for i in range(len(header), max_len)]
-        rows = values[1:]
-        df = pd.DataFrame(rows, columns=header)
-        df = df[~df.apply(lambda row: all(cell.strip() == "" for cell in row), axis=1)]
-        return df
-    except Exception as e:
-        st.sidebar.error(f"Erro ao ler aba {name}: {e}")
+        return pd.DataFrame(ws.get_all_records())
+    except:
         return pd.DataFrame()
 
 erros_df = read_ws("erros")
@@ -156,32 +163,15 @@ trabalhos_df = read_ws("trabalhos")
 dacen_df = read_ws("dacen")
 psi_df = read_ws("psi")
 
-# ===== Sidebar =====
 st.sidebar.header("Dados carregados")
 st.sidebar.write("erros:", len(erros_df))
 st.sidebar.write("trabalhos:", len(trabalhos_df))
 st.sidebar.write("dacen:", len(dacen_df))
 st.sidebar.write("psi:", len(psi_df))
 
-if st.sidebar.button("🔄 Atualizar planilhas"):
-    st.cache_data.clear()
-    st.rerun()
-
-with st.sidebar.expander("Prévia da aba erros"):
-    st.write(erros_df.tail(10))
-
 # ===== Cliente Gemini =====
 os.environ["GEMINI_API_KEY"] = GEMINI_API_KEY
 client = genai.Client()
-
-# ===== Funções para busca =====
-def search_relevant_rows(dfs, max_per_sheet=200):
-    results = {}
-    for name, df in dfs.items():
-        if df.empty:
-            continue
-        results[name] = df.head(max_per_sheet)
-    return results
 
 def build_context(dfs, max_chars=15000):
     parts = []
@@ -189,8 +179,8 @@ def build_context(dfs, max_chars=15000):
         if df.empty:
             continue
         parts.append(f"--- {name} ---")
-        for r in df.to_dict(orient="records"):
-            row_items = [f"{k}: {v}" for k, v in r.items() if str(v).strip() not in ["", "None", "nan"]]
+        for r in df.head(50).to_dict(orient="records"):  # só 50 linhas por aba
+            row_items = [f"{k}: {v}" for k,v in r.items() if v is not None and str(v).strip() != '']
             parts.append(" | ".join(row_items))
     context = "\n".join(parts)
     if len(context) > max_chars:
@@ -218,8 +208,9 @@ def remove_drive_links(text):
     return re.sub(r'https?://drive\.google\.com/file/d/[a-zA-Z0-9_-]+/view\?usp=drive_link', '', text)
 
 # ===== Layout principal =====
-col_esq, col_meio, col_dir = st.columns([1, 2, 1])
+col_esq, col_meio, col_dir = st.columns([1,2,1])
 with col_meio:
+    st.markdown("<p class='custom-font'>olá</p>", unsafe_allow_html=True)
     st.markdown("<h1 class='custom-font'>PlasPrint IA</h1><br>", unsafe_allow_html=True)
     st.markdown("<p class='custom-font'>Qual a sua dúvida?</p>", unsafe_allow_html=True)
     pergunta = st.text_input("", key="central_input", label_visibility="collapsed")
@@ -240,17 +231,8 @@ with col_meio:
                     st.error("Não foi possível obter a cotação do dólar.")
                 else:
                     dfs = {"erros": erros_df, "trabalhos": trabalhos_df, "dacen": dacen_df, "psi": psi_df}
-                    filtered_dfs = search_relevant_rows(dfs, max_per_sheet=200)
-
-                    with st.sidebar.expander("Linhas enviadas ao Gemini", expanded=False):
-                        for name, df_env in filtered_dfs.items():
-                            st.write(f"{name}: {len(df_env)}")
-
-                    if not filtered_dfs:
-                        st.warning(f'Não encontrei nada relacionado a "{pergunta}" nas planilhas.')
-                    else:
-                        context = build_context(filtered_dfs)
-                        prompt = f"""
+                    context = build_context(dfs)
+                    prompt = f"""
 Você é um assistente técnico que responde em português.
 Baseie-se **apenas** nos dados abaixo (planilhas). 
 Responda de forma objetiva, sem citar de onde veio a informação ou a fonte.
@@ -264,38 +246,27 @@ Pergunta:
 
 Responda de forma clara, sem citar a aba ou linha da planilha.
 """
-                        try:
-                            resp = client.models.generate_content(model="gemini-2.5-flash", contents=prompt)
-                            quantidade_garrafas = 10  # Ajuste aqui conforme a quantidade
-                            output_fmt = format_dollar_values_detailed(resp.text, rate, quantidade_garrafas)
-                            output_fmt = remove_drive_links(output_fmt)
-                            st.markdown(
-                                f"<div style='text-align:center; margin-top:20px;'>{output_fmt.replace(chr(10),'<br/>')}</div>",
-                                unsafe_allow_html=True,
-                            )
-                            show_drive_images_from_text(resp.text)
-                        except Exception as e:
-                            st.error(f"Erro ao chamar Gemini: {e}")
+                    try:
+                        resp = client.models.generate_content(model="gemini-2.5-flash", contents=prompt)
+                        output_fmt = format_dollar_values(resp.text, rate)
+                        output_fmt = remove_drive_links(output_fmt)
+                        st.markdown(f"<div style='text-align:center; margin-top:20px;'>{output_fmt.replace(chr(10),'<br/>')}</div>", unsafe_allow_html=True)
+                        show_drive_images_from_text(resp.text)
+                    except Exception as e:
+                        st.error(f"Erro ao chamar Gemini: {e}")
             st.session_state.botao_texto = "Buscar"
 
 # ===== Rodapé e logo =====
-st.markdown(
-    """
+st.markdown("""
 <style>
 .version-tag { position: fixed; bottom: 50px; right: 25px; font-size: 12px; color: white; opacity: 0.7; z-index: 100; }
 .logo-footer { position: fixed; bottom: 5px; left: 50%; transform: translateX(-50%); width: 120px; z-index: 100; }
 </style>
 <div class="version-tag">V1.0</div>
-""",
-    unsafe_allow_html=True,
-)
+""", unsafe_allow_html=True)
 
 def get_base64_img(path):
     with open(path, "rb") as f:
         return base64.b64encode(f.read()).decode()
-
 img_base64_logo = get_base64_img("logo.png")
-st.markdown(
-    f'<img src="data:image/png;base64,{img_base64_logo}" class="logo-footer" />',
-    unsafe_allow_html=True,
-)
+st.markdown(f'<img src="data:image/png;base64,{img_base64_logo}" class="logo-footer" />', unsafe_allow_html=True)
