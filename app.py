@@ -151,6 +151,8 @@ except Exception as e:
 
 # ===== Carregar DataFrames com cache =====
 @st.cache_data
+# ===== Carregar DataFrames com cache =====
+@st.cache_data
 def read_ws(name):
     try:
         ws = sh.worksheet(name)
@@ -162,12 +164,15 @@ erros_df = read_ws("erros")
 trabalhos_df = read_ws("trabalhos")
 dacen_df = read_ws("dacen")
 psi_df = read_ws("psi")
+gerais_df = read_ws("gerais")   # 🔹 Nova aba
 
 st.sidebar.header("Dados carregados")
 st.sidebar.write("erros:", len(erros_df))
 st.sidebar.write("trabalhos:", len(trabalhos_df))
 st.sidebar.write("dacen:", len(dacen_df))
 st.sidebar.write("psi:", len(psi_df))
+st.sidebar.write("gerais:", len(gerais_df))   # 🔹 Mostra no sidebar
+
 
 # ===== Cliente Gemini =====
 os.environ["GEMINI_API_KEY"] = GEMINI_API_KEY
@@ -230,7 +235,7 @@ with col_meio:
                 if rate is None:
                     st.error("Não foi possível obter a cotação do dólar.")
                 else:
-                    dfs = {"erros": erros_df, "trabalhos": trabalhos_df, "dacen": dacen_df, "psi": psi_df}
+                    dfs = {"erros": erros_df,"trabalhos": trabalhos_df,"dacen": dacen_df,"psi": psi_df,"gerais": gerais_df }
                     context = build_context(dfs)
                     prompt = f"""
 Você é um assistente técnico que responde em português.
