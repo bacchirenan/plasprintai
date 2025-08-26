@@ -156,7 +156,7 @@ st.sidebar.write("gerais:", len(st.session_state.gerais_df))
 
 if st.sidebar.button("Atualizar planilha"):
     refresh_data()
-    st.experimental_rerun()
+    st.rerun()
 
 # ===== Cliente Gemini =====
 os.environ["GEMINI_API_KEY"] = GEMINI_API_KEY
@@ -265,4 +265,5 @@ def get_base64_img(path):
 
 img_base64_logo = get_base64_img("logo.png")
 st.markdown(f'<img src="data:image/png;base64,{img_base64_logo}" class="logo-footer" />', unsafe_allow_html=True)
+
 
