@@ -33,10 +33,6 @@ def to_brazilian(n):
         n = 0.01  # valor mínimo para evitar 0.00
     return f"{n:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
-def extract_dollar_values(text):
-    money_regex = re.compile(r'\$\s?\d+(?:[.,]\d+)?')
-    return [parse_money_str(m.group(0)) for m in money_regex.finditer(text) if parse_money_str(m.group(0)) is not None]
-
 def format_dollar_values(text, rate):
     money_regex = re.compile(r'\$\s?\d+(?:[.,]\d+)?')
     def repl(m):
@@ -135,16 +131,30 @@ def read_ws(name):
     except:
         return pd.DataFrame()
 
+# Carregar todas as abas
 erros_df = read_ws("erros")
 trabalhos_df = read_ws("trabalhos")
 dacen_df = read_ws("dacen")
 psi_df = read_ws("psi")
+gerais_df = read_ws("gerais")  # nova aba
 
+# ===== Botão de atualização na sidebar =====
 st.sidebar.header("Dados carregados")
 st.sidebar.write("erros:", len(erros_df))
 st.sidebar.write("trabalhos:", len(trabalhos_df))
 st.sidebar.write("dacen:", len(dacen_df))
 st.sidebar.write("psi:", len(psi_df))
+st.sidebar.write("gerais:", len(gerais_df))
+
+st.sidebar.markdown("---")
+if st.sidebar.button("🔄 Atualizar planilhas"):
+    st.cache_data.clear()  # limpa caches
+    erros_df = read_ws("erros")
+    trabalhos_df = read_ws("trabalhos")
+    dacen_df = read_ws("dacen")
+    psi_df = read_ws("psi")
+    gerais_df = read_ws("gerais")
+    st.sidebar.success("Planilhas atualizadas com sucesso!")
 
 # ===== Cliente Gemini =====
 os.environ["GEMINI_API_KEY"] = GEMINI_API_KEY
@@ -206,7 +216,13 @@ with col_meio:
                 if rate is None:
                     st.error("Não foi possível obter a cotação do dólar.")
                 else:
-                    dfs = {"erros": erros_df, "trabalhos": trabalhos_df, "dacen": dacen_df, "psi": psi_df}
+                    dfs = {
+                        "erros": erros_df,
+                        "trabalhos": trabalhos_df,
+                        "dacen": dacen_df,
+                        "psi": psi_df,
+                        "gerais": gerais_df  # incluir aba gerais
+                    }
                     context = build_context(dfs)
                     prompt = f"""
 Você é um assistente técnico que responde em português.
@@ -224,18 +240,6 @@ Responda de forma clara, sem citar a aba ou linha da planilha.
 """
                     try:
                         resp = client.models.generate_content(model="gemini-2.5-flash", contents=prompt)
-                        # ===== Verificação automática de valores USD =====
-                        usd_values = extract_dollar_values(resp.text)
-                        brl_values = [to_brazilian(v*rate) for v in usd_values]
-                        if usd_values:
-                            df_check = pd.DataFrame({
-                                "USD": [f"${v}" for v in usd_values],
-                                "BRL": [f"R$ {b}" for b in brl_values]
-                            })
-                            st.markdown("### Valores convertidos (verificação automática)")
-                            st.dataframe(df_check)
-
-                        # ===== Formatação final =====
                         output_fmt = format_dollar_values(resp.text, rate)
                         output_fmt = remove_drive_links(output_fmt)
                         st.markdown(f"<div style='text-align:center; margin-top:20px;'>{output_fmt.replace(chr(10),'<br/>')}</div>", unsafe_allow_html=True)
