@@ -22,23 +22,34 @@ def format_dollar_values(text, rate):
     if "$" not in text or rate is None:
         return text
 
-    money_regex = re.compile(r'\$\d{1,3}(?:[.,]\d{3})*(?:[.,]\d+)?')
+    money_regex = re.compile(r'\$\s?\d+(?:[.,]\d+)?')
 
-    # 🔹 Função corrigida para não confundir 0.008 com 8
+    # 🔹 Corrigido: interpreta corretamente valores pequenos
     def parse_money_str(s):
         s = s.strip()
         if s.startswith('$'):
             s = s[1:]
         s = s.replace(" ", "")
+
+        if "." in s:
+            try:
+                return float(s)
+            except:
+                return None
+        if "," in s:
+            try:
+                return float(s.replace(".", "").replace(",", "."))
+            except:
+                return None
         try:
-            return float(s.replace(",", ""))  # sempre ponto como decimal
+            return float(s)
         except:
             return None
 
-    # 🔹 Formatação adaptada para até 4 casas decimais em valores muito pequenos
+    # 🔹 Formatação com até 4 casas decimais para valores muito pequenos
     def to_brazilian(n):
-        if n < 0.01:
-            s = f"{n:,.4f}"  # até 4 casas decimais
+        if n < 0.01 and n > 0:
+            s = f"{n:,.4f}"
         else:
             s = f"{n:,.2f}"
         s = s.replace(',', 'X').replace('.', ',').replace('X', '.')
@@ -50,11 +61,13 @@ def format_dollar_values(text, rate):
         if val is None:
             return orig
         converted = val * rate
+        # 🔹 Forçar mínimo R$ 0,01
+        if 0 < converted < 0.01:
+            converted = 0.01
         brl = to_brazilian(converted)
         return f"{orig} (R$ {brl})"
 
     formatted = money_regex.sub(repl, text)
-
     if not formatted.endswith("\n"):
         formatted += "\n"
     formatted += "(valores sem impostos)"
@@ -252,6 +265,4 @@ st.markdown("""
 
 def get_base64_img(path):
     with open(path, "rb") as f:
-        return base64.b64encode(f.read()).decode()
-img_base64_logo = get_base64_img("logo.png")
-st.markdown(f'<img src="data:image/png;base64,{img_base64_logo}" class="logo-footer" />', unsafe_allow_html=True)
+        return base64.b64encode(f.read
