@@ -235,7 +235,7 @@ with col_meio:
                 if rate is None:
                     st.error("Não foi possível obter a cotação do dólar.")
                 else:
-                    dfs = {"erros": erros_df,"trabalhos": trabalhos_df,"dacen": dacen_df,"psi": psi_df,"gerais": gerais_df }
+                    dfs = {"erros": erros_df, "trabalhos": trabalhos_df, "dacen": dacen_df, "psi": psi_df}
                     context = build_context(dfs)
                     prompt = f"""
 Você é um assistente técnico que responde em português.
