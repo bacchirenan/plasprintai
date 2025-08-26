@@ -14,10 +14,8 @@ def get_usd_brl_rate():
     try:
         res = requests.get("https://economia.awesomeapi.com.br/json/last/USD-BRL")
         data = res.json()
-        rate = float(data["USDBRL"]["ask"])
-        return rate
-    except Exception as e:
-        st.error(f"Erro ao buscar cotação do dólar: {e}")
+        return float(data["USDBRL"]["ask"])
+    except:
         return None
 
 def parse_money_str(s):
@@ -32,7 +30,7 @@ def parse_money_str(s):
 
 def to_brazilian(n):
     if 0 < n < 0.01:
-        n = 0.01  # mínimo para evitar 0.00
+        n = 0.01  # valor mínimo para evitar 0.00
     return f"{n:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 def format_dollar_values(text, rate):
@@ -40,9 +38,9 @@ def format_dollar_values(text, rate):
     def repl(m):
         orig = m.group(0)
         val = parse_money_str(orig)
-        if val is None or rate is None:
+        if val is None:
             return orig
-        converted = val * float(rate)
+        converted = val * rate
         brl = to_brazilian(converted)
         return f"{orig} (R$ {brl})"
     formatted = money_regex.sub(repl, text)
@@ -118,45 +116,47 @@ sa_json = json.loads(base64.b64decode(SERVICE_ACCOUNT_B64).decode())
 scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
 creds = Credentials.from_service_account_info(sa_json, scopes=scopes)
 gc = gspread.authorize(creds)
-
 try:
     sh = gc.open_by_key(SHEET_ID)
 except Exception as e:
     st.error(f"Não consegui abrir a planilha: {e}")
     st.stop()
 
-# ===== Função para ler abas =====
+# ===== Carregar DataFrames =====
 @st.cache_data
 def read_ws(name):
     try:
         ws = sh.worksheet(name)
         return pd.DataFrame(ws.get_all_records())
-    except Exception as e:
-        st.warning(f"A aba '{name}' não pôde ser carregada: {e}")
+    except:
         return pd.DataFrame()
 
-def refresh_data():
-    st.session_state.erros_df = read_ws("erros")
-    st.session_state.trabalhos_df = read_ws("trabalhos")
-    st.session_state.dacen_df = read_ws("dacen")
-    st.session_state.psi_df = read_ws("psi")
-    st.session_state.gerais_df = read_ws("gerais")
+# Abas existentes (inclui a 'gerais' que você adicionou)
+erros_df = read_ws("erros")
+trabalhos_df = read_ws("trabalhos")
+dacen_df = read_ws("dacen")
+psi_df = read_ws("psi")
+gerais_df = read_ws("gerais")  # nova aba
 
-# ===== Inicializar DataFrames =====
-if "erros_df" not in st.session_state:
-    refresh_data()
-
-# ===== Sidebar: atualizar planilha =====
+# ===== Sidebar: status + botão atualizar =====
 st.sidebar.header("Dados carregados")
-st.sidebar.write("erros:", len(st.session_state.erros_df))
-st.sidebar.write("trabalhos:", len(st.session_state.trabalhos_df))
-st.sidebar.write("dacen:", len(st.session_state.dacen_df))
-st.sidebar.write("psi:", len(st.session_state.psi_df))
-st.sidebar.write("gerais:", len(st.session_state.gerais_df))
+st.sidebar.write("erros:", len(erros_df))
+st.sidebar.write("trabalhos:", len(trabalhos_df))
+st.sidebar.write("dacen:", len(dacen_df))
+st.sidebar.write("psi:", len(psi_df))
+st.sidebar.write("gerais:", len(gerais_df))
 
-if st.sidebar.button("Atualizar planilha"):
-    refresh_data()
-    st.experimental_rerun()
+st.sidebar.markdown("---")
+if st.sidebar.button("🔄 Atualizar planilhas"):
+    st.cache_data.clear()  # limpa caches das funções @st.cache_data
+    # recarrega os DataFrames
+    erros_df = read_ws("erros")
+    trabalhos_df = read_ws("trabalhos")
+    dacen_df = read_ws("dacen")
+    psi_df = read_ws("psi")
+    gerais_df = read_ws("gerais")
+    st.sidebar.success("Planilhas atualizadas com sucesso!")
+    st.rerun()  # força recarregar a interface (compatível com Streamlit Cloud)
 
 # ===== Cliente Gemini =====
 os.environ["GEMINI_API_KEY"] = GEMINI_API_KEY
@@ -219,11 +219,11 @@ with col_meio:
                     st.error("Não foi possível obter a cotação do dólar.")
                 else:
                     dfs = {
-                        "erros": st.session_state.erros_df,
-                        "trabalhos": st.session_state.trabalhos_df,
-                        "dacen": st.session_state.dacen_df,
-                        "psi": st.session_state.psi_df,
-                        "gerais": st.session_state.gerais_df
+                        "erros": erros_df,
+                        "trabalhos": trabalhos_df,
+                        "dacen": dacen_df,
+                        "psi": psi_df,
+                        "gerais": gerais_df  # inclui a aba gerais no contexto
                     }
                     context = build_context(dfs)
                     prompt = f"""
@@ -242,9 +242,13 @@ Responda de forma clara, sem citar a aba ou linha da planilha.
 """
                     try:
                         resp = client.models.generate_content(model="gemini-2.5-flash", contents=prompt)
+                        # Formatação final com conversão USD -> BRL
                         output_fmt = format_dollar_values(resp.text, rate)
                         output_fmt = remove_drive_links(output_fmt)
-                        st.markdown(f"<div style='text-align:center; margin-top:20px;'>{output_fmt.replace(chr(10),'<br/>')}</div>", unsafe_allow_html=True)
+                        st.markdown(
+                            f"<div style='text-align:center; margin-top:20px;'>{output_fmt.replace(chr(10),'<br/>')}</div>",
+                            unsafe_allow_html=True
+                        )
                         show_drive_images_from_text(resp.text)
                     except Exception as e:
                         st.error(f"Erro ao chamar Gemini: {e}")
