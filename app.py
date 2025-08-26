@@ -37,7 +37,11 @@ def to_brazilian(n):
 
 def format_dollar_values(text, rate):
     money_regex = re.compile(r'\$\s?\d+(?:[.,]\d+)?')
+    found = False  # flag para saber se houve valores em dólar
+
     def repl(m):
+        nonlocal found
+        found = True
         orig = m.group(0)
         val = parse_money_str(orig)
         if val is None or rate is None:
@@ -45,11 +49,16 @@ def format_dollar_values(text, rate):
         converted = val * float(rate)
         brl = to_brazilian(converted)
         return f"{orig} (R$ {brl})"
+
     formatted = money_regex.sub(repl, text)
-    if not formatted.endswith("\n"):
-        formatted += "\n"
-    formatted += "(valores sem impostos)"
+
+    if found:  # só adiciona se houve valor em dólar
+        if not formatted.endswith("\n"):
+            formatted += "\n"
+        formatted += "(valores sem impostos)"
+
     return formatted
+
 
 def inject_favicon():
     try:
@@ -265,5 +274,6 @@ def get_base64_img(path):
 
 img_base64_logo = get_base64_img("logo.png")
 st.markdown(f'<img src="data:image/png;base64,{img_base64_logo}" class="logo-footer" />', unsafe_allow_html=True)
+
 
 
