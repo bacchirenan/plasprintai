@@ -24,33 +24,14 @@ def format_dollar_values(text, rate):
 
     money_regex = re.compile(r'\$\d{1,3}(?:[.,]\d{3})*(?:[.,]\d+)?')
 
+    # 🔹 Função corrigida
     def parse_money_str(s):
         s = s.strip()
         if s.startswith('$'):
             s = s[1:]
         s = s.replace(" ", "")
-        if '.' in s and ',' in s:
-            if s.rfind(',') > s.rfind('.'):
-                dec, thou = ',', '.'
-            else:
-                dec, thou = '.', ','
-            s_clean = s.replace(thou, '').replace(dec, '.')
-        elif ',' in s:
-            last = s.rsplit(',', 1)[-1]
-            if 1 <= len(last) <= 2:
-                s_clean = s.replace('.', '').replace(',', '.')
-            else:
-                s_clean = s.replace(',', '')
-        elif '.' in s:
-            last = s.rsplit('.', 1)[-1]
-            if 1 <= len(last) <= 2:
-                s_clean = s
-            else:
-                s_clean = s.replace('.', '')
-        else:
-            s_clean = s
         try:
-            return float(s_clean)
+            return float(s.replace(",", ""))  # sempre ponto como decimal
         except:
             return None
 
