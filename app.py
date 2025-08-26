@@ -24,33 +24,23 @@ def format_dollar_values(text, rate):
 
     money_regex = re.compile(r'\$\s?\d+(?:[.,]\d+)?')
 
-    # 🔹 Corrigido: interpreta corretamente valores pequenos
+    # 🔹 Função corrigida para interpretar corretamente valores pequenos
     def parse_money_str(s):
         s = s.strip()
         if s.startswith('$'):
             s = s[1:]
         s = s.replace(" ", "")
-
-        if "." in s:
-            try:
-                return float(s)
-            except:
-                return None
-        if "," in s:
-            try:
-                return float(s.replace(".", "").replace(",", "."))
-            except:
-                return None
+        s = s.replace(",", ".")  # sempre ponto como decimal
         try:
             return float(s)
         except:
             return None
 
-    # 🔹 Formatação com até 4 casas decimais para valores muito pequenos
     def to_brazilian(n):
-        s = f"{n:,.2f}"  # padrão 2 casas
-        s = s.replace(',', 'X').replace('.', ',').replace('X', '.')
-        return s
+        # 🔹 Mínimo R$ 0,01 para valores muito pequenos
+        if 0 < n < 0.01:
+            n = 0.01
+        return f"{n:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
     def repl(m):
         orig = m.group(0)
@@ -58,9 +48,6 @@ def format_dollar_values(text, rate):
         if val is None:
             return orig
         converted = val * rate
-        # 🔹 Forçar mínimo R$ 0,01
-        if 0 < converted < 0.01:
-            converted = 0.01
         brl = to_brazilian(converted)
         return f"{orig} (R$ {brl})"
 
