@@ -18,27 +18,27 @@ def get_usd_brl_rate():
     except:
         return None
 
-def format_dollar_values(text, rate):
-    if "$" not in text or rate is None:
-        return text
+def parse_money_str(s):
+    s = s.strip()
+    if s.startswith('$'):
+        s = s[1:]
+    s = s.replace(" ", "").replace(",", ".")
+    try:
+        return float(s)
+    except:
+        return None
 
+def to_brazilian(n):
+    if 0 < n < 0.01:
+        n = 0.01
+    return f"{n:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+def extract_dollar_values(text):
     money_regex = re.compile(r'\$\s?\d+(?:[.,]\d+)?')
+    return [parse_money_str(m.group(0)) for m in money_regex.finditer(text) if parse_money_str(m.group(0)) is not None]
 
-    def parse_money_str(s):
-        s = s.strip()
-        if s.startswith('$'):
-            s = s[1:]
-        s = s.replace(" ", "")
-        s = s.replace(",", ".")
-        try:
-            return float(s)
-        except:
-            return None
-
-    def to_brazilian(n):
-        if 0 < n < 0.01:
-            n = 0.01
-        return f"{n:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+def format_dollar_values(text, rate):
+    money_regex = re.compile(r'\$\s?\d+(?:[.,]\d+)?')
 
     def repl(m):
         orig = m.group(0)
@@ -227,6 +227,18 @@ Responda de forma clara, sem citar a aba ou linha da planilha.
 """
                     try:
                         resp = client.models.generate_content(model="gemini-2.5-flash", contents=prompt)
+                        # ===== Verificação automática de valores USD =====
+                        usd_values = extract_dollar_values(resp.text)
+                        brl_values = [to_brazilian(v*rate) for v in usd_values]
+                        if usd_values:
+                            df_check = pd.DataFrame({
+                                "USD": [f"${v}" for v in usd_values],
+                                "BRL": [f"R$ {b}" for b in brl_values]
+                            })
+                            st.markdown("### Valores convertidos (verificação automática)")
+                            st.dataframe(df_check)
+
+                        # ===== Formatação final =====
                         output_fmt = format_dollar_values(resp.text, rate)
                         output_fmt = remove_drive_links(output_fmt)
                         st.markdown(f"<div style='text-align:center; margin-top:20px;'>{output_fmt.replace(chr(10),'<br/>')}</div>", unsafe_allow_html=True)
