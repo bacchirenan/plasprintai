@@ -5,41 +5,62 @@ import gspread
 from google.oauth2.service_account import Credentials
 from google import genai
 import yfinance as yf
+import datetime
+import time
 
 # ===== Configuração da página =====
 st.set_page_config(page_title="PlasPrint IA", page_icon="favicon.ico", layout="wide")
 
 # ===== Funções auxiliares =====
-@st.cache_data(ttl=300)
 def get_usd_brl_rate():
-    """Retorna a cotação USD/BRL. Primeiro tenta AwesomeAPI, depois Yahoo Finance."""
-    # --- Tentativa 1: AwesomeAPI ---
-    try:
-        res = requests.get("https://economia.awesomeapi.com.br/json/last/USD-BRL", timeout=10)
-        data = res.json()
-        if "USDBRL" in data and "ask" in data["USDBRL"]:
-            rate = float(data["USDBRL"]["ask"])
-            return rate
-        else:
-            st.warning("Resposta da AwesomeAPI não contém USDBRL")
-    except Exception as e:
-        st.warning(f"Falha na AwesomeAPI: {e}")
+    """
+    Retorna a cotação USD/BRL.
+    Usa cache local em st.session_state para evitar excesso de requisições.
+    Primeiro tenta AwesomeAPI com retry, depois Yahoo Finance.
+    """
+    # Verifica cache
+    if "usd_brl_cache" in st.session_state:
+        cached = st.session_state.usd_brl_cache
+        if (datetime.datetime.now() - cached["timestamp"]).seconds < 600:
+            return cached["rate"]
+
+    rate = None
+
+    # --- Tentativa 1: AwesomeAPI com retry ---
+    url = "https://economia.awesomeapi.com.br/json/last/USD-BRL"
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            res = requests.get(url, timeout=10)
+            if res.status_code == 429:
+                # Too Many Requests -> espera exponencial
+                time.sleep(2 ** attempt)
+                continue
+            data = res.json()
+            if "USDBRL" in data and "ask" in data["USDBRL"]:
+                rate = float(data["USDBRL"]["ask"])
+                break
+        except:
+            # Não exibe aviso na tela
+            pass
 
     # --- Tentativa 2: Yahoo Finance ---
-    try:
-        ticker = yf.Ticker("USDBRL=X")
-        hist = ticker.history(period="1d")
-        if not hist.empty:
-            rate = float(hist["Close"].iloc[-1])
-            return rate
-        else:
-            st.warning("Yahoo Finance não retornou histórico")
-    except Exception as e:
-        st.warning(f"Falha no Yahoo Finance: {e}")
+    if rate is None:
+        try:
+            ticker = yf.Ticker("USDBRL=X")
+            hist = ticker.history(period="1d")
+            if not hist.empty:
+                rate = float(hist["Close"].iloc[-1])
+        except:
+            pass
 
-    # --- Nenhuma fonte disponível ---
-    st.error("Não foi possível obter a cotação do dólar no momento.")
-    return None
+    # --- Salva no cache ---
+    st.session_state.usd_brl_cache = {
+        "rate": rate,
+        "timestamp": datetime.datetime.now()
+    }
+
+    return rate
 
 def parse_money_str(s):
     s = s.strip()
@@ -53,12 +74,12 @@ def parse_money_str(s):
 
 def to_brazilian(n):
     if 0 < n < 0.01:
-        n = 0.01  # mínimo para evitar 0.00
+        n = 0.01
     return f"{n:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 def format_dollar_values(text, rate):
     money_regex = re.compile(r'\$\s?\d+(?:[.,]\d+)?')
-    found = False  # flag para saber se houve valores em dólar
+    found = False
 
     def repl(m):
         nonlocal found
@@ -73,22 +94,21 @@ def format_dollar_values(text, rate):
 
     formatted = money_regex.sub(repl, text)
 
-    if found:  # só adiciona se houve valor em dólar
+    if found:
         if not formatted.endswith("\n"):
             formatted += "\n"
         formatted += "(valores sem impostos)"
 
     return formatted
 
-# === Função para processar resposta do Gemini ===
 def process_response(texto):
     padrao_dolar = r"\$\s?\d+(?:[.,]\d+)?"
     if re.search(padrao_dolar, texto):
-        rate = get_usd_brl_rate()  # só chama se houver '$'
+        rate = get_usd_brl_rate()
         if rate:
             return format_dollar_values(texto, rate)
         else:
-            return texto + "\n\n[Não foi possível obter a cotação do dólar no momento.]"
+            return texto  # Não mostra erro na tela
     return texto
 
 def inject_favicon():
@@ -182,11 +202,10 @@ def refresh_data():
     st.session_state.psi_df = read_ws("psi")
     st.session_state.gerais_df = read_ws("gerais")
 
-# ===== Inicializar DataFrames =====
 if "erros_df" not in st.session_state:
     refresh_data()
 
-# ===== Sidebar: atualizar planilha =====
+# ===== Sidebar =====
 st.sidebar.header("Dados carregados")
 st.sidebar.write("erros:", len(st.session_state.erros_df))
 st.sidebar.write("trabalhos:", len(st.session_state.trabalhos_df))
@@ -278,7 +297,7 @@ Responda de forma clara, sem citar a aba ou linha da planilha.
 """
                 try:
                     resp = client.models.generate_content(model="gemini-2.5-flash", contents=prompt)
-                    output_fmt = process_response(resp.text)  # <<< só busca cotação se tiver $
+                    output_fmt = process_response(resp.text)
                     output_fmt = remove_drive_links(output_fmt)
                     st.markdown(f"<div style='text-align:center; margin-top:20px;'>{output_fmt.replace(chr(10),'<br/>')}</div>", unsafe_allow_html=True)
                     show_drive_images_from_text(resp.text)
