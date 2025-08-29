@@ -4,6 +4,7 @@ import json, base64, os, re, requests, io
 import gspread
 from google.oauth2.service_account import Credentials
 from google import genai
+import yfinance as yf
 
 # ===== Configuração da página =====
 st.set_page_config(page_title="PlasPrint IA", page_icon="favicon.ico", layout="wide")
@@ -11,14 +12,34 @@ st.set_page_config(page_title="PlasPrint IA", page_icon="favicon.ico", layout="w
 # ===== Funções auxiliares =====
 @st.cache_data(ttl=300)
 def get_usd_brl_rate():
+    """Retorna a cotação USD/BRL. Primeiro tenta AwesomeAPI, depois Yahoo Finance."""
+    # --- Tentativa 1: AwesomeAPI ---
     try:
-        res = requests.get("https://economia.awesomeapi.com.br/json/last/USD-BRL")
+        res = requests.get("https://economia.awesomeapi.com.br/json/last/USD-BRL", timeout=10)
         data = res.json()
-        rate = float(data["USDBRL"]["ask"])
-        return rate
+        if "USDBRL" in data and "ask" in data["USDBRL"]:
+            rate = float(data["USDBRL"]["ask"])
+            return rate
+        else:
+            st.warning("Resposta da AwesomeAPI não contém USDBRL")
     except Exception as e:
-        st.error(f"Erro ao buscar cotação do dólar: {e}")
-        return None
+        st.warning(f"Falha na AwesomeAPI: {e}")
+
+    # --- Tentativa 2: Yahoo Finance ---
+    try:
+        ticker = yf.Ticker("USDBRL=X")
+        hist = ticker.history(period="1d")
+        if not hist.empty:
+            rate = float(hist["Close"].iloc[-1])
+            return rate
+        else:
+            st.warning("Yahoo Finance não retornou histórico")
+    except Exception as e:
+        st.warning(f"Falha no Yahoo Finance: {e}")
+
+    # --- Nenhuma fonte disponível ---
+    st.error("Não foi possível obter a cotação do dólar no momento.")
+    return None
 
 def parse_money_str(s):
     s = s.strip()
@@ -59,11 +80,11 @@ def format_dollar_values(text, rate):
 
     return formatted
 
-# === NOVA FUNÇÃO: só chama get_usd_brl_rate() se houver valores em dólar ===
+# === Função para processar resposta do Gemini ===
 def process_response(texto):
     padrao_dolar = r"\$\s?\d+(?:[.,]\d+)?"
-    if re.search(padrao_dolar, texto):  # só busca cotação se houver "$"
-        rate = get_usd_brl_rate()
+    if re.search(padrao_dolar, texto):
+        rate = get_usd_brl_rate()  # só chama se houver '$'
         if rate:
             return format_dollar_values(texto, rate)
         else:
