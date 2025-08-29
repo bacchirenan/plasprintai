@@ -10,12 +10,10 @@ import yfinance as yf
 st.set_page_config(page_title="PlasPrint IA", page_icon="favicon.ico", layout="wide")
 
 # ===== Funções auxiliares =====
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=600)  # mantém cache por 10 minutos
 def get_usd_brl_rate():
-    """Busca a cotação do dólar em BRL.
-       1ª tentativa: AwesomeAPI
-       2ª tentativa: Yahoo Finance
-    """
+    """Busca a cotação do dólar em BRL com fallback e cache."""
+
     # --- Tentativa 1: AwesomeAPI ---
     try:
         url = "https://economia.awesomeapi.com.br/json/last/USD-BRL"
@@ -24,9 +22,9 @@ def get_usd_brl_rate():
         data = res.json()
 
         if "USDBRL" in data and "ask" in data["USDBRL"]:
-            return float(data["USDBRL"]["ask"])
-        else:
-            st.warning(f"Resposta inesperada da AwesomeAPI: {data}")
+            rate = float(data["USDBRL"]["ask"])
+            st.session_state["last_usd_brl"] = rate
+            return rate
     except Exception as e:
         st.warning(f"Falha na AwesomeAPI: {e}")
 
@@ -35,11 +33,16 @@ def get_usd_brl_rate():
         ticker = yf.Ticker("USDBRL=X")
         hist = ticker.history(period="1d")
         if not hist.empty:
-            return float(hist["Close"].iloc[-1])
-        else:
-            st.error("Yahoo Finance não retornou dados.")
+            rate = float(hist["Close"].iloc[-1])
+            st.session_state["last_usd_brl"] = rate
+            return rate
     except Exception as e:
-        st.error(f"Erro no Yahoo Finance: {e}")
+        st.warning(f"Falha no Yahoo Finance: {e}")
+
+    # --- Tentativa 3: Última cotação válida ---
+    if "last_usd_brl" in st.session_state:
+        st.info("Usando última cotação válida salva em cache.")
+        return st.session_state["last_usd_brl"]
 
     # Se tudo falhar
     return None
