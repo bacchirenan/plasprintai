@@ -4,6 +4,7 @@ import json, base64, os, re, requests, io
 import gspread
 from google.oauth2.service_account import Credentials
 from google import genai
+import yfinance as yf
 
 # ===== Configuração da página =====
 st.set_page_config(page_title="PlasPrint IA", page_icon="favicon.ico", layout="wide")
@@ -11,14 +12,38 @@ st.set_page_config(page_title="PlasPrint IA", page_icon="favicon.ico", layout="w
 # ===== Funções auxiliares =====
 @st.cache_data(ttl=300)
 def get_usd_brl_rate():
+    """Busca a cotação do dólar em BRL.
+       1ª tentativa: AwesomeAPI
+       2ª tentativa: Yahoo Finance
+    """
+    # --- Tentativa 1: AwesomeAPI ---
     try:
-        res = requests.get("https://economia.awesomeapi.com.br/json/last/USD-BRL")
+        url = "https://economia.awesomeapi.com.br/json/last/USD-BRL"
+        res = requests.get(url, timeout=10)
+        res.raise_for_status()
         data = res.json()
-        rate = float(data["USDBRL"]["ask"])
-        return rate
+
+        if "USDBRL" in data and "ask" in data["USDBRL"]:
+            return float(data["USDBRL"]["ask"])
+        else:
+            st.warning(f"Resposta inesperada da AwesomeAPI: {data}")
     except Exception as e:
-        st.error(f"Erro ao buscar cotação do dólar: {e}")
-        return None
+        st.warning(f"Falha na AwesomeAPI: {e}")
+
+    # --- Tentativa 2: Yahoo Finance ---
+    try:
+        ticker = yf.Ticker("USDBRL=X")
+        hist = ticker.history(period="1d")
+        if not hist.empty:
+            return float(hist["Close"].iloc[-1])
+        else:
+            st.error("Yahoo Finance não retornou dados.")
+    except Exception as e:
+        st.error(f"Erro no Yahoo Finance: {e}")
+
+    # Se tudo falhar
+    return None
+
 
 def parse_money_str(s):
     s = s.strip()
@@ -141,7 +166,7 @@ def read_ws(name):
         ws = sh.worksheet(name)
         return pd.DataFrame(ws.get_all_records())
     except Exception as e:
-        st.warning(f"A aba '{name}' não pôde ser carregada: {e}")
+        st.warning(f"Aba '{name}' não pôde ser carregada: {e}")
         return pd.DataFrame()
 
 def refresh_data():
@@ -274,6 +299,3 @@ def get_base64_img(path):
 
 img_base64_logo = get_base64_img("logo.png")
 st.markdown(f'<img src="data:image/png;base64,{img_base64_logo}" class="logo-footer" />', unsafe_allow_html=True)
-
-
-
