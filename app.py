@@ -221,13 +221,13 @@ if st.sidebar.button("Atualizar planilha"):
 os.environ["GEMINI_API_KEY"] = GEMINI_API_KEY
 client = genai.Client()
 
-def build_context(dfs, max_chars=15000):
+def build_context(dfs, max_chars=50000):
     parts = []
     for name, df in dfs.items():
         if df.empty:
             continue
         parts.append(f"--- {name} ---")
-        for r in df.head(50).to_dict(orient="records"):
+        for r in df.to_dict(orient="records"):
             row_items = [f"{k}: {v}" for k,v in r.items() if v is not None and str(v).strip() != '']
             parts.append(" | ".join(row_items))
     context = "\n".join(parts)
@@ -244,7 +244,10 @@ def load_drive_image(file_id):
     return res.content
 
 def show_drive_images_from_text(text):
-    drive_links = re.findall(r'https?://drive\.google\.com/file/d/([a-zA-Z0-9_-]+)[^/]*/view', text)
+    drive_links = re.findall(
+    r'https?://drive\.google\.com/file/d/([a-zA-Z0-9_-]+)',
+    text
+)
     for file_id in drive_links:
         try:
             img_bytes = io.BytesIO(load_drive_image(file_id))
@@ -298,7 +301,6 @@ Responda de forma clara, sem citar a aba ou linha da planilha.
                 try:
                     resp = client.models.generate_content(model="gemini-2.5-flash", contents=prompt)
                     output_fmt = process_response(resp.text)
-                    output_fmt = remove_drive_links(output_fmt)
                     st.markdown(f"<div style='text-align:center; margin-top:20px;'>{output_fmt.replace(chr(10),'<br/>')}</div>", unsafe_allow_html=True)
                     show_drive_images_from_text(resp.text)
                 except Exception as e:
@@ -320,3 +322,4 @@ def get_base64_img(path):
 
 img_base64_logo = get_base64_img("logo.png")
 st.markdown(f'<img src="data:image/png;base64,{img_base64_logo}" class="logo-footer" />', unsafe_allow_html=True)
+
