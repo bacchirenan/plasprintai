@@ -13,11 +13,6 @@ st.set_page_config(page_title="PlasPrint IA", page_icon="favicon.ico", layout="w
 
 # ===== Funções auxiliares =====
 def get_usd_brl_rate():
-    """
-    Retorna a cotação USD/BRL.
-    Usa cache local em st.session_state para evitar excesso de requisições.
-    Primeiro tenta AwesomeAPI com retry, depois Yahoo Finance.
-    """
     if "usd_brl_cache" in st.session_state:
         cached = st.session_state.usd_brl_cache
         if (datetime.datetime.now() - cached["timestamp"]).seconds < 600:
@@ -229,7 +224,7 @@ def build_context(dfs, max_chars=50000):
         context = context[:max_chars] + "\n...[CONTEXTO TRUNCADO]"
     return context
 
-# ✅ ===== Cache de imagens do Drive =====
+# ===== Cache de imagens do Drive =====
 @st.cache_data
 def load_drive_image(file_id):
     url = f"https://drive.google.com/uc?export=view&id={file_id}"
@@ -237,17 +232,17 @@ def load_drive_image(file_id):
     res.raise_for_status()
     return res.content
 
-# ✅ ===== Função modificada =====
-def show_drive_images_from_text(text, allow_images=True):  # <<< ALTERAÇÃO
+# ===== Função modificada =====
+def show_drive_images_from_text(text, allow_images=True):
     drive_links = re.findall(
         r'https?://drive\.google\.com/file/d/([a-zA-Z0-9_-]+)',
         text
     )
 
-    if not allow_images:                       # <<< ALTERAÇÃO
+    if not allow_images:
         for file_id in drive_links:
             url = f"https://drive.google.com/file/d/{file_id}/view"
-            st.markdown(f"[Abrir link]({url})")
+            st.markdown(f"[Abrir imagem]({url})")
         return
 
     for file_id in drive_links:
@@ -305,8 +300,15 @@ Responda de forma clara, sem citar a aba ou linha da planilha.
                     output_fmt = process_response(resp.text)
                     st.markdown(f"<div style='text-align:center; margin-top:20px;'>{output_fmt.replace(chr(10),'<br/>')}</div>", unsafe_allow_html=True)
 
-                    # ✅ Agora só exibimos como link no texto principal:
-                    show_drive_images_from_text(resp.text, allow_images=False)  # <<< ALTERAÇÃO
+                    # ✅ links no texto → só link
+                    show_drive_images_from_text(resp.text, allow_images=False)
+
+                    # ✅ imagens vindas da coluna Imagem
+                    for df in dfs.values():
+                        if "Imagem" in df.columns:
+                            for val in df["Imagem"]:
+                                if isinstance(val, str) and "drive.google.com" in val:
+                                    show_drive_images_from_text(val, allow_images=True)
 
                 except Exception as e:
                     st.error(f"Erro ao chamar Gemini: {e}")
@@ -327,4 +329,3 @@ def get_base64_img(path):
 
 img_base64_logo = get_base64_img("logo.png")
 st.markdown(f'<img src="data:image/png;base64,{img_base64_logo}" class="logo-footer" />', unsafe_allow_html=True)
-
