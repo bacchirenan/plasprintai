@@ -17,9 +17,7 @@ def get_usd_brl_rate():
         cached = st.session_state.usd_brl_cache
         if (datetime.datetime.now() - cached["timestamp"]).seconds < 600:
             return cached["rate"]
-
     rate = None
-
     url = "https://economia.awesomeapi.com.br/json/last/USD-BRL"
     max_retries = 3
     for attempt in range(max_retries):
@@ -34,7 +32,6 @@ def get_usd_brl_rate():
                 break
         except:
             pass
-
     if rate is None:
         try:
             ticker = yf.Ticker("USDBRL=X")
@@ -43,12 +40,10 @@ def get_usd_brl_rate():
                 rate = float(hist["Close"].iloc[-1])
         except:
             pass
-
     st.session_state.usd_brl_cache = {
         "rate": rate,
         "timestamp": datetime.datetime.now()
     }
-
     return rate
 
 def parse_money_str(s):
@@ -69,7 +64,6 @@ def to_brazilian(n):
 def format_dollar_values(text, rate):
     money_regex = re.compile(r'\$\s?\d+(?:[.,]\d+)?')
     found = False
-
     def repl(m):
         nonlocal found
         found = True
@@ -80,14 +74,11 @@ def format_dollar_values(text, rate):
         converted = val * float(rate)
         brl = to_brazilian(converted)
         return f"{orig} (R$ {brl})"
-
     formatted = money_regex.sub(repl, text)
-
     if found:
         if not formatted.endswith("\n"):
             formatted += "\n"
         formatted += "(valores sem impostos)"
-
     return formatted
 
 def process_response(texto):
@@ -232,20 +223,14 @@ def load_drive_image(file_id):
     res.raise_for_status()
     return res.content
 
-# ===== Função modificada =====
-def show_drive_images_from_text(text, allow_images=True):
-    drive_links = re.findall(
-        r'https?://drive\.google\.com/file/d/([a-zA-Z0-9_-]+)',
-        text
-    )
-
-    if not allow_images:
-        for file_id in drive_links:
+# ===== Função para exibir imagens condicionais =====
+def show_drive_images_from_text(text, allowed_ids=None):
+    drive_links = re.findall(r'https?://drive\.google\.com/file/d/([a-zA-Z0-9_-]+)/view', text)
+    for file_id in drive_links:
+        if allowed_ids is not None and file_id not in allowed_ids:
             url = f"https://drive.google.com/file/d/{file_id}/view"
             st.markdown(f"[Abrir imagem]({url})")
-        return
-
-    for file_id in drive_links:
+            continue
         try:
             img_bytes = io.BytesIO(load_drive_image(file_id))
             st.image(img_bytes, use_container_width=True)
@@ -300,15 +285,15 @@ Responda de forma clara, sem citar a aba ou linha da planilha.
                     output_fmt = process_response(resp.text)
                     st.markdown(f"<div style='text-align:center; margin-top:20px;'>{output_fmt.replace(chr(10),'<br/>')}</div>", unsafe_allow_html=True)
 
-                    # ✅ links no texto → só link
-                    show_drive_images_from_text(resp.text, allow_images=False)
+                    # links no texto → só link
+                    show_drive_images_from_text(resp.text, allowed_ids=[])
 
-                    # ✅ imagens vindas da coluna Imagem
+                    # imagens da coluna "Imagem"
                     for df in dfs.values():
                         if "Imagem" in df.columns:
                             for val in df["Imagem"]:
                                 if isinstance(val, str) and "drive.google.com" in val:
-                                    show_drive_images_from_text(val, allow_images=True)
+                                    show_drive_images_from_text(val, allowed_ids=[re.findall(r'/d/([a-zA-Z0-9_-]+)/', val)[0]])
 
                 except Exception as e:
                     st.error(f"Erro ao chamar Gemini: {e}")
