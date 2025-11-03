@@ -247,7 +247,7 @@ def show_drive_images_from_text(text, allow_images=True):  # <<< ALTERAÇÃO
     if not allow_images:                       # <<< ALTERAÇÃO
         for file_id in drive_links:
             url = f"https://drive.google.com/file/d/{file_id}/view"
-            st.markdown(f"[Abrir imagem]({url})")
+            st.markdown(f"[Abrir link]({url})")
         return
 
     for file_id in drive_links:
@@ -327,3 +327,4 @@ def get_base64_img(path):
 
 img_base64_logo = get_base64_img("logo.png")
 st.markdown(f'<img src="data:image/png;base64,{img_base64_logo}" class="logo-footer" />', unsafe_allow_html=True)
+
