@@ -293,7 +293,13 @@ Responda de forma clara, sem citar a aba ou linha da planilha.
 
                     # LIMPEZA DO TEXTO EXIBIDO — apenas remove links e "Links de imagens:"
                     clean_text = re.sub(r'Links de imagens:?', '', resp.text, flags=re.IGNORECASE)
-                    clean_text = re.sub(r'https?://drive\.google\.com/file/d/[a-zA-Z0-9_-]+/view\?usp=drive_link', '', clean_text)
+
+                    # Remove qualquer URL (Drive, http, https, etc)
+                    clean_text = re.sub(r'https?://\S+', '', clean_text)
+
+                    # Remove possíveis espaços sobrando
+                    clean_text = re.sub(r'\s{2,}', ' ', clean_text).strip()
+
 
                     output_fmt = process_response(clean_text)
                     st.markdown(f"<div style='text-align:center; margin-top:20px;'>{output_fmt.replace(chr(10),'<br/>')}</div>", unsafe_allow_html=True)
@@ -319,3 +325,4 @@ def get_base64_img(path):
 
 img_base64_logo = get_base64_img("logo.png")
 st.markdown(f'<img src="data:image/png;base64,{img_base64_logo}" class="logo-footer" />', unsafe_allow_html=True)
+
