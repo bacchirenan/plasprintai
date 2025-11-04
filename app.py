@@ -8,9 +8,12 @@ import yfinance as yf
 import datetime
 import time
 from difflib import SequenceMatcher
+import math
 
+# ====== Configuração da página ======
 st.set_page_config(page_title="PlasPrint IA", page_icon="favicon.ico", layout="wide")
 
+# ====== Helpers financeiros / texto ======
 def get_usd_brl_rate():
     if "usd_brl_cache" in st.session_state:
         cached = st.session_state.usd_brl_cache
@@ -39,10 +42,7 @@ def get_usd_brl_rate():
                 rate = float(hist["Close"].iloc[-1])
         except:
             pass
-    st.session_state.usd_brl_cache = {
-        "rate": rate,
-        "timestamp": datetime.datetime.now()
-    }
+    st.session_state.usd_brl_cache = {"rate": rate, "timestamp": datetime.datetime.now()}
     return rate
 
 def parse_money_str(s):
@@ -90,6 +90,7 @@ def process_response(texto):
             return texto
     return texto
 
+# ====== Favicon / fontes / background (mesmo que antes) ======
 def inject_favicon():
     try:
         with open("favicon.ico", "rb") as f:
@@ -97,7 +98,6 @@ def inject_favicon():
         st.markdown(f'<link rel="icon" href="data:image/x-icon;base64,{data}" type="image/x-icon" />', unsafe_allow_html=True)
     except:
         pass
-
 inject_favicon()
 
 def get_base64_of_jpg(image_path):
@@ -118,22 +118,10 @@ st.markdown(f"""
     font-family: 'CustomFont';
     src: url(data:font/ttf;base64,{font_base64}) format('truetype');
 }}
-h1.custom-font {{
-    font-family: 'CustomFont', sans-serif !important;
-    text-align: center;
-    font-size: 380%;
-}}
-p.custom-font {{
-    font-family: 'CustomFont', sans-serif !important;
-    font-weight: bold;
-    text-align: left;
-}}
-div.stButton > button {{
-    font-family: 'CustomFont', sans-serif !important;
-}}
-div.stTextInput > div > input {{
-    font-family: 'CustomFont', sans-serif !important;
-}}
+h1.custom-font {{ font-family: 'CustomFont', sans-serif !important; text-align: center; font-size: 380%; }}
+p.custom-font {{ font-family: 'CustomFont', sans-serif !important; font-weight: bold; text-align: left; }}
+div.stButton > button {{ font-family: 'CustomFont', sans-serif !important; }}
+div.stTextInput > div > input {{ font-family: 'CustomFont', sans-serif !important; }}
 .stApp {{
     background-image: url("data:image/jpg;base64,{img_base64}");
     background-size: cover;
@@ -144,11 +132,12 @@ div.stTextInput > div > input {{
 </style>
 """, unsafe_allow_html=True)
 
+# ====== Segredos / conexão Google Sheets ======
 try:
     GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
     SHEET_ID = st.secrets["SHEET_ID"]
     SERVICE_ACCOUNT_B64 = st.secrets["SERVICE_ACCOUNT_B64"]
-except:
+except Exception as e:
     st.error("Configure os segredos GEMINI_API_KEY, SHEET_ID e SERVICE_ACCOUNT_B64.")
     st.stop()
 
@@ -193,9 +182,59 @@ if st.sidebar.button("Atualizar planilha"):
     refresh_data()
     st.rerun()
 
+# ====== Gemini client ======
 os.environ["GEMINI_API_KEY"] = GEMINI_API_KEY
 client = genai.Client()
 
+# ====== Embeddings helper (tenta genai, se falhar usa fallback) ======
+def get_embedding_genai(text):
+    """
+    Tenta obter embedding via genai. Se falhar, retorna None.
+    A forma exata de chamada pode variar conforme SDK; este bloco tenta suportar a maioria das versões.
+    """
+    try:
+        # tentativa padrão (ajuste se necessário para sua versão do SDK)
+        emb_resp = client.embeddings.create(model="gemini-1.1", input=[text])
+        # diferentes SDKs retornam estruturas diferentes; tentamos extrair o vetor
+        if hasattr(emb_resp, "data"):
+            data = emb_resp.data
+            if isinstance(data, list) and len(data) > 0:
+                vec = data[0].embedding if hasattr(data[0], "embedding") else data[0]["embedding"]
+                return vec
+        if hasattr(emb_resp, "embeddings"):
+            return emb_resp.embeddings[0]
+        # fallback: se for dicionário
+        if isinstance(emb_resp, dict):
+            if "data" in emb_resp and len(emb_resp["data"])>0:
+                return emb_resp["data"][0].get("embedding")
+    except Exception:
+        return None
+    return None
+
+def cosine_sim(a, b):
+    # ambos são listas/iteráveis de floats
+    try:
+        dot = sum(x*y for x,y in zip(a,b))
+        norm_a = math.sqrt(sum(x*x for x in a))
+        norm_b = math.sqrt(sum(x*x for x in b))
+        if norm_a == 0 or norm_b == 0:
+            return 0.0
+        return dot / (norm_a * norm_b)
+    except Exception:
+        return 0.0
+
+def similarity_ratio(a, b):
+    # fallback textual similarity
+    return SequenceMatcher(None, a, b).ratio()
+
+@st.cache_data
+def load_drive_image(file_id):
+    url = f"https://drive.google.com/uc?export=view&id={file_id}"
+    res = requests.get(url, timeout=20)
+    res.raise_for_status()
+    return res.content
+
+# ====== Construir contexto (igual ao seu) ======
 def build_context(dfs, max_chars=50000):
     parts = []
     for name, df in dfs.items():
@@ -210,16 +249,7 @@ def build_context(dfs, max_chars=50000):
         context = context[:max_chars] + "\n...[CONTEXTO TRUNCADO]"
     return context
 
-@st.cache_data
-def load_drive_image(file_id):
-    url = f"https://drive.google.com/uc?export=view&id={file_id}"
-    res = requests.get(url)
-    res.raise_for_status()
-    return res.content
-
-def similarity(a, b):
-    return SequenceMatcher(None, a, b).ratio()
-
+# ====== Layout principal ======
 col_esq, col_meio, col_dir = st.columns([1,2,1])
 with col_meio:
     st.markdown("<h1 class='custom-font'>PlasPrint IA</h1><br>", unsafe_allow_html=True)
@@ -254,60 +284,122 @@ Dados:
 Pergunta:
 {pergunta}
 """
-
                 try:
-                    resp = client.models.generate_content(model="gemini-2.5-flash", contents=prompt)
-                    resp_text = resp.text
-                    output_fmt = process_response(resp_text)
+                    model_resp = client.models.generate_content(model="gemini-2.5-flash", contents=prompt)
+                    # Usamos a variável que você informou: 'Resposta'
+                    # Atribuímos aqui para manter compatibilidade com seu pedido.
+                    Resposta = model_resp.text
 
+                    # Processa valores em dólar (opcional)
+                    output_fmt = process_response(Resposta)
+
+                    # Exibe a resposta (texto que o usuário vê)
                     st.markdown(f"<div style='text-align:center; margin-top:20px;'>{output_fmt.replace(chr(10),'<br/>')}</div>", unsafe_allow_html=True)
 
-                    drive_links_texto = re.findall(r'https?://drive\.google\.com/file/d/([a-zA-Z0-9_-]+)/view', resp_text)
+                    # Mostra links embutidos no texto da resposta -> apenas como link (não carregar imagem)
+                    drive_links_texto = re.findall(r'https?://drive\.google\.com/file/d/([a-zA-Z0-9_-]+)/view', Resposta)
                     for file_id in drive_links_texto:
                         url = f"https://drive.google.com/file/d/{file_id}/view"
                         st.markdown(f"[Abrir link]({url})")
 
-                    combined = pd.concat(dfs.values())
-                    relevant_rows = []
+                    # --- Agora a parte nova: encontrar até 3 linhas relevantes usando a coluna "Informações" ---
+                    combined = pd.concat(dfs.values(), ignore_index=True)
 
-                    for idx, row in combined.iterrows():
-                        row_text = " ".join([str(x) for x in row.values])
-                        score = similarity(resp_text.lower(), row_text.lower())
-                        if score >= 0.25:
-                            relevant_rows.append(row)
+                    # Pré-processar lista de candidatos (somente linhas que tenham algo na coluna Informações)
+                    candidates = []
+                    for i, row in combined.iterrows():
+                        info_val = None
+                        if "Informações" in combined.columns:
+                            info_val = row.get("Informações")
+                        else:
+                            # Em caso de planilhas sem a coluna, tenta buscar colunas próximas
+                            info_val = None
+                        if isinstance(info_val, str) and info_val.strip() != "":
+                            candidates.append((i, info_val, row))
 
-                    이미지_ids = []
-                    info_links = []
+                    # Tenta gerar embedding da resposta
+                    emb_resp = get_embedding_genai(Resposta)
+                    use_embeddings = emb_resp is not None
 
-                    for row in relevant_rows:
-                        if "Imagem" in row and isinstance(row["Imagem"], str) and "drive.google.com" in row["Imagem"]:
-                            fid = re.findall(r'/d/([a-zA-Z0-9_-]+)/', row["Imagem"])
-                            if fid:
-                                이미지_ids.append(fid[0])
-                        if "Informações" in row and isinstance(row["Informações"], str) and "drive.google.com" in row["Informações"]:
-                            info_links.append(row["Informações"])
+                    scored = []
+                    if use_embeddings:
+                        # geramos embeddings para cada candidate.info (cuidado com custo; cache em produção é recomendado)
+                        for idx, info_val, row in candidates:
+                            emb_row = get_embedding_genai(info_val)
+                            if emb_row is None:
+                                score = similarity_ratio(Resposta.lower(), info_val.lower())
+                            else:
+                                score = cosine_sim(emb_resp, emb_row)
+                            scored.append((score, idx, info_val, row))
+                    else:
+                        # fallback textual similarity
+                        for idx, info_val, row in candidates:
+                            score = similarity_ratio(Resposta.lower(), info_val.lower())
+                            scored.append((score, idx, info_val, row))
 
-                    for link in info_links:
-                        st.markdown(f"[Abrir link]({link})")
+                    # Ordena por score desc e pega top 3
+                    scored.sort(key=lambda x: x[0], reverse=True)
+                    top_n = 3
+                    selected = [s for s in scored[:top_n] if s[0] >= 0.18]  # limiar conservador; ajuste se desejar
 
-                    for fid in 이미지_ids:
-                        try:
-                            img_bytes = io.BytesIO(load_drive_image(fid))
-                            st.image(img_bytes, use_container_width=True)
-                        except:
-                            st.warning(f"Não foi possível carregar imagem do Drive: {fid}")
+                    if not selected:
+                        st.info("Nenhum registro com imagens foi considerado suficientemente relevante para mostrar (ajuste o texto da pergunta ou afine o limiar).")
+                    else:
+                        # Reunir links de Informações (apenas como link) e imagens (carregar apenas Imagens dessas linhas)
+                        shown = 0
+                        for score, idx, info_val, row in selected:
+                            # Mostrar link da coluna Informações (se houver)
+                            if isinstance(info_val, str) and "drive.google.com" in info_val:
+                                st.markdown(f"[Abrir Informações (linha relacionada)]({info_val})")
+                            else:
+                                # também mostrar o texto curto de informações para contexto
+                                st.markdown(f"**Contexto relacionado ({shown+1})** — {info_val}")
+
+                            # Mostrar as imagens da coluna "Imagens" desta linha (pode ser várias, separadas por vírgula ou nova linha)
+                            if "Imagens" in row.index:
+                                img_cell = row.get("Imagens")
+                                if isinstance(img_cell, str) and img_cell.strip() != "":
+                                    # separar por vírgula ou nova linha
+                                    parts = re.split(r'[\n,;]+', img_cell)
+                                    for p in parts:
+                                        p = p.strip()
+                                        if not p:
+                                            continue
+                                        # se for link do drive -> extrair id e carregar
+                                        if "drive.google.com" in p:
+                                            fid_match = re.findall(r'/d/([a-zA-Z0-9_-]+)/', p)
+                                            if fid_match:
+                                                fid = fid_match[0]
+                                                try:
+                                                    img_bytes = io.BytesIO(load_drive_image(fid))
+                                                    st.image(img_bytes, use_container_width=True)
+                                                except Exception:
+                                                    st.warning(f"Não foi possível carregar imagem do Drive: {fid}")
+                                            else:
+                                                # se for um link direto (já com uc?export=view) tenta mostrar como imagem via URL direta
+                                                try:
+                                                    st.image(p, use_container_width=True)
+                                                except Exception:
+                                                    st.markdown(f"[Abrir imagem]({p})")
+                                        else:
+                                            # não é drive: tenta mostrar diretamente (pode ser um URL http)
+                                            try:
+                                                st.image(p, use_container_width=True)
+                                            except Exception:
+                                                st.markdown(f"[Abrir imagem]({p})")
+                            shown += 1
 
                 except Exception as e:
-                    st.error(f"Erro ao chamar Gemini: {e}")
-
+                    st.error(f"Erro ao chamar Gemini ou processar resposta: {e}")
         st.session_state.botao_texto = "Buscar"
 
+# ====== Rodapé ======
 st.markdown("""
 <style>
-.version-tag { position: fixed; bottom: 50px; right: 25px; font-size: 12px; color: white; opacity: 0.7; z-index: 100; }
+.version-tag { position: fixed; bottom: 50px; right: 25px; font-size: 12px; color: white; opacity: 0.8; z-index: 100; }
 .logo-footer { position: fixed; bottom: 5px; left: 50%; transform: translateX(-50%); width: 120px; z-index: 100; }
 </style>
-<div class="version-tag">V1.2</div>
+<div class="version-tag">V1.3</div>
 """, unsafe_allow_html=True)
 
 def get_base64_img(path):
