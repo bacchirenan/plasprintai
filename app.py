@@ -13,27 +13,18 @@ st.set_page_config(page_title="PlasPrint IA", page_icon="favicon.ico", layout="w
 
 # ===== Funções auxiliares =====
 def get_usd_brl_rate():
-    """
-    Retorna a cotação USD/BRL.
-    Usa cache local em st.session_state para evitar excesso de requisições.
-    Primeiro tenta AwesomeAPI com retry, depois Yahoo Finance.
-    """
-    # Verifica cache
     if "usd_brl_cache" in st.session_state:
         cached = st.session_state.usd_brl_cache
         if (datetime.datetime.now() - cached["timestamp"]).seconds < 600:
             return cached["rate"]
 
     rate = None
-
-    # --- Tentativa 1: AwesomeAPI com retry ---
     url = "https://economia.awesomeapi.com.br/json/last/USD-BRL"
     max_retries = 3
     for attempt in range(max_retries):
         try:
             res = requests.get(url, timeout=10)
             if res.status_code == 429:
-                # Too Many Requests -> espera exponencial
                 time.sleep(2 ** attempt)
                 continue
             data = res.json()
@@ -41,10 +32,8 @@ def get_usd_brl_rate():
                 rate = float(data["USDBRL"]["ask"])
                 break
         except:
-            # Não exibe aviso na tela
             pass
 
-    # --- Tentativa 2: Yahoo Finance ---
     if rate is None:
         try:
             ticker = yf.Ticker("USDBRL=X")
@@ -54,7 +43,6 @@ def get_usd_brl_rate():
         except:
             pass
 
-    # --- Salva no cache ---
     st.session_state.usd_brl_cache = {
         "rate": rate,
         "timestamp": datetime.datetime.now()
@@ -108,7 +96,7 @@ def process_response(texto):
         if rate:
             return format_dollar_values(texto, rate)
         else:
-            return texto  # Não mostra erro na tela
+            return texto
     return texto
 
 def inject_favicon():
@@ -185,7 +173,6 @@ except Exception as e:
     st.error(f"Não consegui abrir a planilha: {e}")
     st.stop()
 
-# ===== Função para ler abas =====
 @st.cache_data
 def read_ws(name):
     try:
@@ -205,7 +192,6 @@ def refresh_data():
 if "erros_df" not in st.session_state:
     refresh_data()
 
-# ===== Sidebar =====
 st.sidebar.header("Dados carregados")
 st.sidebar.write("erros:", len(st.session_state.erros_df))
 st.sidebar.write("trabalhos:", len(st.session_state.trabalhos_df))
@@ -217,7 +203,6 @@ if st.sidebar.button("Atualizar planilha"):
     refresh_data()
     st.rerun()
 
-# ===== Cliente Gemini =====
 os.environ["GEMINI_API_KEY"] = GEMINI_API_KEY
 client = genai.Client()
 
@@ -235,7 +220,6 @@ def build_context(dfs, max_chars=50000):
         context = context[:max_chars] + "\n...[CONTEXTO TRUNCADO]"
     return context
 
-# ===== Cache de imagens do Drive =====
 @st.cache_data
 def load_drive_image(file_id):
     url = f"https://drive.google.com/uc?export=view&id={file_id}"
@@ -253,20 +237,18 @@ def show_drive_images_from_text(text):
             img_bytes = io.BytesIO(load_drive_image(file_id))
             st.image(img_bytes, use_container_width=True)
         except:
-            pass
+            st.warning(f"Não foi possível carregar imagem do Drive: {file_id}")
 
-# === NOVA FUNÇÃO AJUSTADA ===
 def show_clickable_links_from_informacoes(text):
     links = re.findall(r'(https?://[^\s]+)', text)
+    if not links:
+        return
     for link in links:
         st.markdown(f"[Abrir link]({link})")
-
-# =====================================
 
 def remove_drive_links(text):
     return re.sub(r'https?://drive\.google\.com/file/d/[a-zA-Z0-9_-]+/view\?usp=drive_link', '', text)
 
-# ===== Layout principal =====
 col_esq, col_meio, col_dir = st.columns([1,2,1])
 with col_meio:
     st.markdown("<h1 class='custom-font'>PlasPrint IA</h1><br>", unsafe_allow_html=True)
@@ -308,7 +290,12 @@ Responda de forma clara, sem citar a aba ou linha da planilha.
 """
                 try:
                     resp = client.models.generate_content(model="gemini-2.5-flash", contents=prompt)
-                    output_fmt = process_response(resp.text)
+
+                    # LIMPEZA DO TEXTO EXIBIDO — apenas remove links e "Links de imagens:"
+                    clean_text = re.sub(r'Links de imagens:?', '', resp.text, flags=re.IGNORECASE)
+                    clean_text = re.sub(r'https?://drive\.google\.com/file/d/[a-zA-Z0-9_-]+/view\?usp=drive_link', '', clean_text)
+
+                    output_fmt = process_response(clean_text)
                     st.markdown(f"<div style='text-align:center; margin-top:20px;'>{output_fmt.replace(chr(10),'<br/>')}</div>", unsafe_allow_html=True)
 
                     show_clickable_links_from_informacoes(resp.text)
@@ -318,19 +305,17 @@ Responda de forma clara, sem citar a aba ou linha da planilha.
                     st.error(f"Erro ao chamar Gemini: {e}")
         st.session_state.botao_texto = "Buscar"
 
-# ===== Rodapé e logo =====
 st.markdown("""
 <style>
 .version-tag { position: fixed; bottom: 50px; right: 25px; font-size: 12px; color: white; opacity: 0.7; z-index: 100; }
 .logo-footer { position: fixed; bottom: 5px; left: 50%; transform: translateX(-50%); width: 120px; z-index: 100; }
 </style>
-<div class="version-tag">V1.2</div>
+<div class="version-tag">V1.1</div>
 """, unsafe_allow_html=True)
 
 def get_base64_img(path):
-    with open(path, "rb") as f:
+    with open(path, "rb") as f:  # <— correção aplicada
         return base64.b64encode(f.read()).decode()
 
 img_base64_logo = get_base64_img("logo.png")
 st.markdown(f'<img src="data:image/png;base64,{img_base64_logo}" class="logo-footer" />', unsafe_allow_html=True)
-
