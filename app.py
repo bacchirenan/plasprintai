@@ -7,11 +7,10 @@ from google import genai
 import yfinance as yf
 import datetime
 import time
+from difflib import SequenceMatcher
 
-# ===== Configuração da página =====
 st.set_page_config(page_title="PlasPrint IA", page_icon="favicon.ico", layout="wide")
 
-# ===== Funções auxiliares =====
 def get_usd_brl_rate():
     if "usd_brl_cache" in st.session_state:
         cached = st.session_state.usd_brl_cache
@@ -98,6 +97,7 @@ def inject_favicon():
         st.markdown(f'<link rel="icon" href="data:image/x-icon;base64,{data}" type="image/x-icon" />', unsafe_allow_html=True)
     except:
         pass
+
 inject_favicon()
 
 def get_base64_of_jpg(image_path):
@@ -108,7 +108,6 @@ def get_base64_font(path):
     with open(path, "rb") as f:
         return base64.b64encode(f.read()).decode()
 
-# ===== Background e fonte =====
 background_image = "background.jpg"
 img_base64 = get_base64_of_jpg(background_image)
 font_base64 = get_base64_font("font.ttf")
@@ -145,7 +144,6 @@ div.stTextInput > div > input {{
 </style>
 """, unsafe_allow_html=True)
 
-# ===== Segredos =====
 try:
     GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
     SHEET_ID = st.secrets["SHEET_ID"]
@@ -165,7 +163,6 @@ except Exception as e:
     st.error(f"Não consegui abrir a planilha: {e}")
     st.stop()
 
-# ===== Ler abas =====
 @st.cache_data
 def read_ws(name):
     try:
@@ -185,7 +182,6 @@ def refresh_data():
 if "erros_df" not in st.session_state:
     refresh_data()
 
-# ===== Sidebar =====
 st.sidebar.header("Dados carregados")
 st.sidebar.write("erros:", len(st.session_state.erros_df))
 st.sidebar.write("trabalhos:", len(st.session_state.trabalhos_df))
@@ -197,7 +193,6 @@ if st.sidebar.button("Atualizar planilha"):
     refresh_data()
     st.rerun()
 
-# ===== Gemini =====
 os.environ["GEMINI_API_KEY"] = GEMINI_API_KEY
 client = genai.Client()
 
@@ -215,7 +210,6 @@ def build_context(dfs, max_chars=50000):
         context = context[:max_chars] + "\n...[CONTEXTO TRUNCADO]"
     return context
 
-# ===== Cache de imagens do Drive =====
 @st.cache_data
 def load_drive_image(file_id):
     url = f"https://drive.google.com/uc?export=view&id={file_id}"
@@ -223,24 +217,9 @@ def load_drive_image(file_id):
     res.raise_for_status()
     return res.content
 
-# ===== Função para exibir imagens condicionais =====
-def show_drive_images_from_text(text, allowed_ids=None):
-    drive_links = re.findall(r'https?://drive\.google\.com/file/d/([a-zA-Z0-9_-]+)/view', text)
-    for file_id in drive_links:
-        if allowed_ids is not None and file_id not in allowed_ids:
-            url = f"https://drive.google.com/file/d/{file_id}/view"
-            st.markdown(f"[Abrir imagem]({url})")
-            continue
-        try:
-            img_bytes = io.BytesIO(load_drive_image(file_id))
-            st.image(img_bytes, use_container_width=True)
-        except:
-            st.warning(f"Não foi possível carregar imagem do Drive: {file_id}")
+def similarity(a, b):
+    return SequenceMatcher(None, a, b).ratio()
 
-def remove_drive_links(text):
-    return re.sub(r'https?://drive\.google\.com/file/d/[a-zA-Z0-9_-]+/view\?usp=drive_link', '', text)
-
-# ===== Layout =====
 col_esq, col_meio, col_dir = st.columns([1,2,1])
 with col_meio:
     st.markdown("<h1 class='custom-font'>PlasPrint IA</h1><br>", unsafe_allow_html=True)
@@ -268,44 +247,67 @@ with col_meio:
                 context = build_context(dfs)
                 prompt = f"""
 Você é um assistente técnico que responde em português.
-Baseie-se **apenas** nos dados abaixo (planilhas). 
-Responda de forma objetiva, sem citar de onde veio a informação ou a fonte.
-Se houver links de imagens, inclua-os no final.
-
+Baseie-se apenas nos dados abaixo (planilhas). 
+Responda de forma objetiva, sem citar a fonte.
 Dados:
 {context}
-
 Pergunta:
 {pergunta}
-
-Responda de forma clara, sem citar a aba ou linha da planilha.
 """
+
                 try:
                     resp = client.models.generate_content(model="gemini-2.5-flash", contents=prompt)
-                    output_fmt = process_response(resp.text)
+                    resp_text = resp.text
+                    output_fmt = process_response(resp_text)
+
                     st.markdown(f"<div style='text-align:center; margin-top:20px;'>{output_fmt.replace(chr(10),'<br/>')}</div>", unsafe_allow_html=True)
 
-                    # links no texto → só link
-                    show_drive_images_from_text(resp.text, allowed_ids=[])
+                    drive_links_texto = re.findall(r'https?://drive\.google\.com/file/d/([a-zA-Z0-9_-]+)/view', resp_text)
+                    for file_id in drive_links_texto:
+                        url = f"https://drive.google.com/file/d/{file_id}/view"
+                        st.markdown(f"[Abrir link]({url})")
 
-                    # imagens da coluna "Imagem"
-                    for df in dfs.values():
-                        if "Imagem" in df.columns:
-                            for val in df["Imagem"]:
-                                if isinstance(val, str) and "drive.google.com" in val:
-                                    show_drive_images_from_text(val, allowed_ids=[re.findall(r'/d/([a-zA-Z0-9_-]+)/', val)[0]])
+                    combined = pd.concat(dfs.values())
+                    relevant_rows = []
+
+                    for idx, row in combined.iterrows():
+                        row_text = " ".join([str(x) for x in row.values])
+                        score = similarity(resp_text.lower(), row_text.lower())
+                        if score >= 0.25:
+                            relevant_rows.append(row)
+
+                    이미지_ids = []
+                    info_links = []
+
+                    for row in relevant_rows:
+                        if "Imagem" in row and isinstance(row["Imagem"], str) and "drive.google.com" in row["Imagem"]:
+                            fid = re.findall(r'/d/([a-zA-Z0-9_-]+)/', row["Imagem"])
+                            if fid:
+                                이미지_ids.append(fid[0])
+                        if "Informações" in row and isinstance(row["Informações"], str) and "drive.google.com" in row["Informações"]:
+                            info_links.append(row["Informações"])
+
+                    for link in info_links:
+                        st.markdown(f"[Abrir link]({link})")
+
+                    for fid in 이미지_ids:
+                        try:
+                            img_bytes = io.BytesIO(load_drive_image(fid))
+                            st.image(img_bytes, use_container_width=True)
+                        except:
+                            st.warning(f"Não foi possível carregar imagem do Drive: {fid}")
 
                 except Exception as e:
                     st.error(f"Erro ao chamar Gemini: {e}")
+
         st.session_state.botao_texto = "Buscar"
 
-# ===== Rodapé =====
 st.markdown("""
 <style>
 .version-tag { position: fixed; bottom: 50px; right: 25px; font-size: 12px; color: white; opacity: 0.7; z-index: 100; }
 .logo-footer { position: fixed; bottom: 5px; left: 50%; transform: translateX(-50%); width: 120px; z-index: 100; }
 </style>
-<div class="version-tag">V1.1</div>
+<div class="version-tag">V1.2</div>
 """, unsafe_allow_html=True)
 
 def get_base64_img(path):
