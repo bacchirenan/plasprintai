@@ -328,8 +328,9 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 def get_base64_img(path):
-    with open(path, "r b") as f:
+    with open(path, "rb") as f:   # <--- corrigido aqui
         return base64.b64encode(f.read()).decode()
 
 img_base64_logo = get_base64_img("logo.png")
 st.markdown(f'<img src="data:image/png;base64,{img_base64_logo}" class="logo-footer" />', unsafe_allow_html=True)
+
