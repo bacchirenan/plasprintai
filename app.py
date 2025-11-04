@@ -245,27 +245,23 @@ def load_drive_image(file_id):
 
 def show_drive_images_from_text(text):
     drive_links = re.findall(
-    r'https?://drive\.google\.com/file/d/([a-zA-Z0-9_-]+)',
-    text
-)
+        r'https?://drive\.google\.com/file/d/([a-zA-Z0-9_-]+)',
+        text
+    )
     for file_id in drive_links:
         try:
             img_bytes = io.BytesIO(load_drive_image(file_id))
             st.image(img_bytes, use_container_width=True)
         except:
-            st.warning(f"Não foi possível carregar imagem do Drive: {file_id}")
+            pass
 
-# === NOVA FUNÇÃO: mostrar links clicáveis que vierem na resposta (ex.: links da coluna "Informações") ===
+# === NOVA FUNÇÃO AJUSTADA ===
 def show_clickable_links_from_informacoes(text):
-    # Encontra todos os links http(s) no texto
     links = re.findall(r'(https?://[^\s]+)', text)
-    if not links:
-        return
-    # Exibe cada link como hyperlink (não tenta carregar como imagem aqui)
-    st.markdown("**Links úteis:**")
     for link in links:
         st.markdown(f"[Abrir link]({link})")
-# === FIM DA NOVA FUNÇÃO ===
+
+# =====================================
 
 def remove_drive_links(text):
     return re.sub(r'https?://drive\.google\.com/file/d/[a-zA-Z0-9_-]+/view\?usp=drive_link', '', text)
@@ -315,11 +311,9 @@ Responda de forma clara, sem citar a aba ou linha da planilha.
                     output_fmt = process_response(resp.text)
                     st.markdown(f"<div style='text-align:center; margin-top:20px;'>{output_fmt.replace(chr(10),'<br/>')}</div>", unsafe_allow_html=True)
 
-                    # === MOSTRAR LINKS (se houver) vindos na resposta — apenas clicáveis (não tentar carregar como imagem) ===
                     show_clickable_links_from_informacoes(resp.text)
-
-                    # Mostra imagens se existirem (comportamento original)
                     show_drive_images_from_text(resp.text)
+
                 except Exception as e:
                     st.error(f"Erro ao chamar Gemini: {e}")
         st.session_state.botao_texto = "Buscar"
@@ -334,7 +328,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 def get_base64_img(path):
-    with open(path, "rb") as f:
+    with open(path, "r b") as f:
         return base64.b64encode(f.read()).decode()
 
 img_base64_logo = get_base64_img("logo.png")
