@@ -255,6 +255,18 @@ def show_drive_images_from_text(text):
         except:
             st.warning(f"Não foi possível carregar imagem do Drive: {file_id}")
 
+# === NOVA FUNÇÃO: mostrar links clicáveis que vierem na resposta (ex.: links da coluna "Informações") ===
+def show_clickable_links_from_informacoes(text):
+    # Encontra todos os links http(s) no texto
+    links = re.findall(r'(https?://[^\s]+)', text)
+    if not links:
+        return
+    # Exibe cada link como hyperlink (não tenta carregar como imagem aqui)
+    st.markdown("**Links úteis:**")
+    for link in links:
+        st.markdown(f"[Abrir link]({link})")
+# === FIM DA NOVA FUNÇÃO ===
+
 def remove_drive_links(text):
     return re.sub(r'https?://drive\.google\.com/file/d/[a-zA-Z0-9_-]+/view\?usp=drive_link', '', text)
 
@@ -302,6 +314,11 @@ Responda de forma clara, sem citar a aba ou linha da planilha.
                     resp = client.models.generate_content(model="gemini-2.5-flash", contents=prompt)
                     output_fmt = process_response(resp.text)
                     st.markdown(f"<div style='text-align:center; margin-top:20px;'>{output_fmt.replace(chr(10),'<br/>')}</div>", unsafe_allow_html=True)
+
+                    # === MOSTRAR LINKS (se houver) vindos na resposta — apenas clicáveis (não tentar carregar como imagem) ===
+                    show_clickable_links_from_informacoes(resp.text)
+
+                    # Mostra imagens se existirem (comportamento original)
                     show_drive_images_from_text(resp.text)
                 except Exception as e:
                     st.error(f"Erro ao chamar Gemini: {e}")
@@ -322,5 +339,3 @@ def get_base64_img(path):
 
 img_base64_logo = get_base64_img("logo.png")
 st.markdown(f'<img src="data:image/png;base64,{img_base64_logo}" class="logo-footer" />', unsafe_allow_html=True)
-
-
