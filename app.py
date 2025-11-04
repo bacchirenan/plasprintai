@@ -237,7 +237,8 @@ def show_drive_images_from_text(text):
             img_bytes = io.BytesIO(load_drive_image(file_id))
             st.image(img_bytes, use_container_width=True)
         except:
-            st.warning(f"Não foi possível carregar imagem do Drive: {file_id}")
+            pass  # silencia o erro sem exibir nada
+
 
 def show_clickable_links_from_informacoes(text):
     links = re.findall(r'(https?://[^\s]+)', text)
@@ -325,4 +326,5 @@ def get_base64_img(path):
 
 img_base64_logo = get_base64_img("logo.png")
 st.markdown(f'<img src="data:image/png;base64,{img_base64_logo}" class="logo-footer" />', unsafe_allow_html=True)
+
 
