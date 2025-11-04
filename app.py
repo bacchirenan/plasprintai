@@ -190,12 +190,9 @@ client = genai.Client()
 def get_embedding_genai(text):
     """
     Tenta obter embedding via genai. Se falhar, retorna None.
-    A forma exata de chamada pode variar conforme SDK; este bloco tenta suportar a maioria das versões.
     """
     try:
-        # tentativa padrão (ajuste se necessário para sua versão do SDK)
         emb_resp = client.embeddings.create(model="gemini-1.1", input=[text])
-        # diferentes SDKs retornam estruturas diferentes; tentamos extrair o vetor
         if hasattr(emb_resp, "data"):
             data = emb_resp.data
             if isinstance(data, list) and len(data) > 0:
@@ -203,7 +200,6 @@ def get_embedding_genai(text):
                 return vec
         if hasattr(emb_resp, "embeddings"):
             return emb_resp.embeddings[0]
-        # fallback: se for dicionário
         if isinstance(emb_resp, dict):
             if "data" in emb_resp and len(emb_resp["data"])>0:
                 return emb_resp["data"][0].get("embedding")
@@ -212,7 +208,6 @@ def get_embedding_genai(text):
     return None
 
 def cosine_sim(a, b):
-    # ambos são listas/iteráveis de floats
     try:
         dot = sum(x*y for x,y in zip(a,b))
         norm_a = math.sqrt(sum(x*x for x in a))
@@ -224,7 +219,6 @@ def cosine_sim(a, b):
         return 0.0
 
 def similarity_ratio(a, b):
-    # fallback textual similarity
     return SequenceMatcher(None, a, b).ratio()
 
 @st.cache_data
@@ -287,7 +281,6 @@ Pergunta:
                 try:
                     model_resp = client.models.generate_content(model="gemini-2.5-flash", contents=prompt)
                     # Usamos a variável que você informou: 'Resposta'
-                    # Atribuímos aqui para manter compatibilidade com seu pedido.
                     Resposta = model_resp.text
 
                     # Processa valores em dólar (opcional)
@@ -302,92 +295,145 @@ Pergunta:
                         url = f"https://drive.google.com/file/d/{file_id}/view"
                         st.markdown(f"[Abrir link]({url})")
 
-                    # --- Agora a parte nova: encontrar até 3 linhas relevantes usando a coluna "Informações" ---
+                    # --- Nova lógica otimizada: encontrar 1 linha relevante usando a coluna "Informações" ---
                     combined = pd.concat(dfs.values(), ignore_index=True)
 
-                    # Pré-processar lista de candidatos (somente linhas que tenham algo na coluna Informações)
+                    # Prepara candidatos (somente linhas com Informações não vazias)
                     candidates = []
-                    for i, row in combined.iterrows():
-                        info_val = None
-                        if "Informações" in combined.columns:
+                    if "Informações" in combined.columns:
+                        for i, row in combined.iterrows():
                             info_val = row.get("Informações")
-                        else:
-                            # Em caso de planilhas sem a coluna, tenta buscar colunas próximas
-                            info_val = None
-                        if isinstance(info_val, str) and info_val.strip() != "":
-                            candidates.append((i, info_val, row))
+                            if isinstance(info_val, str) and info_val.strip() != "":
+                                candidates.append((i, info_val, row))
 
-                    # Tenta gerar embedding da resposta
+                    # se não há candidatos
+                    if not candidates:
+                        st.info("Nenhum registro com campo 'Informações' encontrado nas planilhas.")
+                        st.session_state.botao_texto = "Buscar"
+                        continue
+
+                    # Tenta gerar embedding da resposta (se possível)
                     emb_resp = get_embedding_genai(Resposta)
                     use_embeddings = emb_resp is not None
 
                     scored = []
-                    if use_embeddings:
-                        # geramos embeddings para cada candidate.info (cuidado com custo; cache em produção é recomendado)
-                        for idx, info_val, row in candidates:
+                    # keywords de país para boost/penalização
+                    user_lower = pergunta.lower()
+                    country_keywords = {
+                        "alem": ["alemã", "alemao", "alemão", "alemanha", "alemã." , "alemã,"],
+                        "china": ["chines", "china", "chinês", "chinês."],
+                        "italia": ["ital", "italiana", "italiano", "itália"]
+                    }
+                    def country_boost(text_lower, user_lower):
+                        boost = 0.0
+                        for key, kws in country_keywords.items():
+                            for kw in kws:
+                                if kw in user_lower:
+                                    # user requested country -> boost if appears in text, penalize otherwise
+                                    if kw in text_lower:
+                                        boost += 0.12
+                                    else:
+                                        boost -= 0.12
+                                    return boost
+                        return 0.0
+
+                    # score each candidate
+                    for idx, info_val, row in candidates:
+                        info_lower = info_val.lower()
+                        # embedding path
+                        score = 0.0
+                        if use_embeddings:
                             emb_row = get_embedding_genai(info_val)
-                            if emb_row is None:
-                                score = similarity_ratio(Resposta.lower(), info_val.lower())
-                            else:
+                            if emb_row is not None:
                                 score = cosine_sim(emb_resp, emb_row)
-                            scored.append((score, idx, info_val, row))
-                    else:
-                        # fallback textual similarity
-                        for idx, info_val, row in candidates:
-                            score = similarity_ratio(Resposta.lower(), info_val.lower())
-                            scored.append((score, idx, info_val, row))
-
-                    # Ordena por score desc e pega top 3
-                    scored.sort(key=lambda x: x[0], reverse=True)
-                    top_n = 3
-                    selected = [s for s in scored[:top_n] if s[0] >= 0.18]  # limiar conservador; ajuste se desejar
-
-                    if not selected:
-                        st.info("Nenhum registro com imagens foi considerado suficientemente relevante para mostrar (ajuste o texto da pergunta ou afine o limiar).")
-                    else:
-                        # Reunir links de Informações (apenas como link) e imagens (carregar apenas Imagens dessas linhas)
-                        shown = 0
-                        for score, idx, info_val, row in selected:
-                            # Mostrar link da coluna Informações (se houver)
-                            if isinstance(info_val, str) and "drive.google.com" in info_val:
-                                st.markdown(f"[Abrir Informações (linha relacionada)]({info_val})")
                             else:
-                                # também mostrar o texto curto de informações para contexto
-                                st.markdown(f"**Contexto relacionado ({shown+1})** — {info_val}")
+                                score = similarity_ratio(Resposta.lower(), info_lower)
+                        else:
+                            score = similarity_ratio(Resposta.lower(), info_lower)
 
-                            # Mostrar as imagens da coluna "Imagens" desta linha (pode ser várias, separadas por vírgula ou nova linha)
-                            if "Imagens" in row.index:
-                                img_cell = row.get("Imagens")
-                                if isinstance(img_cell, str) and img_cell.strip() != "":
-                                    # separar por vírgula ou nova linha
-                                    parts = re.split(r'[\n,;]+', img_cell)
-                                    for p in parts:
-                                        p = p.strip()
-                                        if not p:
-                                            continue
-                                        # se for link do drive -> extrair id e carregar
-                                        if "drive.google.com" in p:
-                                            fid_match = re.findall(r'/d/([a-zA-Z0-9_-]+)/', p)
-                                            if fid_match:
-                                                fid = fid_match[0]
-                                                try:
-                                                    img_bytes = io.BytesIO(load_drive_image(fid))
-                                                    st.image(img_bytes, use_container_width=True)
-                                                except Exception:
-                                                    st.warning(f"Não foi possível carregar imagem do Drive: {fid}")
-                                            else:
-                                                # se for um link direto (já com uc?export=view) tenta mostrar como imagem via URL direta
-                                                try:
-                                                    st.image(p, use_container_width=True)
-                                                except Exception:
-                                                    st.markdown(f"[Abrir imagem]({p})")
-                                        else:
-                                            # não é drive: tenta mostrar diretamente (pode ser um URL http)
-                                            try:
-                                                st.image(p, use_container_width=True)
-                                            except Exception:
-                                                st.markdown(f"[Abrir imagem]({p})")
-                            shown += 1
+                        # Boost / penalização heurística
+                        # 1) boost/penaliza por país se usuário mencionou
+                        score += country_boost(info_lower, user_lower)
+
+                        # 2) penaliza se não mencionar 'máquina' (ou variações)
+                        if not any(w in info_lower for w in ["máquina", "maquina", "printer", "impressora", "impressão"]):
+                            score -= 0.20
+
+                        # 3) penaliza textos muito curtos (prováveis dicas)
+                        if len(info_lower) < 30:
+                            score -= 0.20
+
+                        # 4) boost se conteúdo contém palavra "empresa" ou marca conhecida (heurística simples)
+                        if any(w in info_lower for w in ["koenig", "bauer", "dacen", "cx-360", "king", "byd"]):
+                            score += 0.08
+
+                        scored.append((score, idx, info_val, row))
+
+                    # Ordena por score desc
+                    scored.sort(key=lambda x: x[0], reverse=True)
+
+                    # Se não houver score acima do limiar, não mostramos nada
+                    MIN_SCORE = 0.30
+                    if len(scored) == 0 or scored[0][0] < MIN_SCORE:
+                        st.info("Nenhum registro com imagens foi considerado suficientemente relevante para mostrar (tente refinar a pergunta).")
+                        st.session_state.botao_texto = "Buscar"
+                        continue
+
+                    # Se top1 for bem dominante, mantemos somente ele
+                    if len(scored) > 1 and (scored[0][0] - scored[1][0]) >= 0.20:
+                        top_choice = scored[0]
+                    else:
+                        # se não é dominante, ainda podemos optar por mostrar apenas top1 (com cautela)
+                        top_choice = scored[0]
+
+                    # Exibir apenas top_choice (1 linha)
+                    score, idx, info_val, row = top_choice
+
+                    # Mostrar a informação (ou link se for drive)
+                    if isinstance(info_val, str) and "drive.google.com" in info_val:
+                        st.markdown(f"[Abrir Informações (linha relacionada)]({info_val})")
+                    else:
+                        st.markdown(f"**Contexto relacionado (1)** — {info_val}")
+
+                    # Exibir sempre as imagens da coluna "Imagens" desta linha (se houver)
+                    if "Imagens" in row.index:
+                        img_cell = row.get("Imagens")
+                        if isinstance(img_cell, str) and img_cell.strip() != "":
+                            # ----- Aqui: imagens separadas por espaço -----
+                            parts = re.split(r'\s+', img_cell.strip())
+                            displayed_any = False
+                            for p in parts:
+                                p = p.strip()
+                                if not p:
+                                    continue
+                                # Drive link?
+                                if "drive.google.com" in p:
+                                    fid_match = re.findall(r'/d/([a-zA-Z0-9_-]+)/', p)
+                                    if fid_match:
+                                        fid = fid_match[0]
+                                        try:
+                                            img_bytes = io.BytesIO(load_drive_image(fid))
+                                            st.image(img_bytes, use_container_width=True)
+                                            displayed_any = True
+                                        except Exception:
+                                            st.markdown(f"[Abrir imagem]({p})")
+                                    else:
+                                        # try direct image
+                                        try:
+                                            st.image(p, use_container_width=True)
+                                            displayed_any = True
+                                        except Exception:
+                                            st.markdown(f"[Abrir imagem]({p})")
+                                else:
+                                    # not a drive link: try to render
+                                    try:
+                                        st.image(p, use_container_width=True)
+                                        displayed_any = True
+                                    except Exception:
+                                        st.markdown(f"[Abrir imagem]({p})")
+
+                            if not displayed_any:
+                                st.info("Havia links em 'Imagens', mas não foi possível renderizá-los direto — foram exibidos como links.")
 
                 except Exception as e:
                     st.error(f"Erro ao chamar Gemini ou processar resposta: {e}")
@@ -399,7 +445,7 @@ st.markdown("""
 .version-tag { position: fixed; bottom: 50px; right: 25px; font-size: 12px; color: white; opacity: 0.8; z-index: 100; }
 .logo-footer { position: fixed; bottom: 5px; left: 50%; transform: translateX(-50%); width: 120px; z-index: 100; }
 </style>
-<div class="version-tag">V1.3</div>
+<div class="version-tag">V1.4</div>
 """, unsafe_allow_html=True)
 
 def get_base64_img(path):
