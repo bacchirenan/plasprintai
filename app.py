@@ -1,3 +1,5 @@
+# ==== INÍCIO DO SEU ARQUIVO ====
+
 import streamlit as st
 import pandas as pd
 import json, base64, os, re, requests, io
@@ -10,6 +12,13 @@ import time
 
 # ===== Configuração da página =====
 st.set_page_config(page_title="PlasPrint IA", page_icon="favicon.ico", layout="wide")
+
+# ===== Função Base64 =====
+def get_base64_img(path):
+    with open(path, "rb") as f:     # <—— CORREÇÃO FEITA AQUI
+        return base64.b64encode(f.read()).decode()
+
+img_base64_logo = get_base64_img("logo.png")
 
 # ===== Funções auxiliares =====
 def get_usd_brl_rate():
@@ -333,4 +342,5 @@ def get_base64_img(path):
 
 img_base64_logo = get_base64_img("logo.png")
 st.markdown(f'<img src="data:image/png;base64,{img_base64_logo}" class="logo-footer" />', unsafe_allow_html=True)
+
 
